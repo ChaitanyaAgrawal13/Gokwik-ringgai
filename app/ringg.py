@@ -18,9 +18,21 @@ def extract_shopify_fabric(product_id, default_fabric):
         res = requests.get(url, headers={"X-Shopify-Access-Token": SHOPIFY_API_TOKEN}, timeout=5)
         if res.status_code == 200:
             html = res.json().get("product", {}).get("body_html", "")
-            match = re.search(r"-\s*([\d% \w,\.]+(?:Cotton|Polyester|Linen|Satin|Silk|Spandex|Viscose|Lycra)[^<]*)", html, re.IGNORECASE)
-            if match:
-                return match.group(1).strip()
+            
+            # Strip out all HTML tags (<p>, <span>) and replace them with newlines
+            clean_text = re.sub(r'<[^>]+>', '\n', html)
+            
+            # Split into lines
+            for line in clean_text.split('\n'):
+                clean_line = line.strip()
+                # Find the clean bullet point containing the fabric percentage
+                if clean_line.startswith("-") and any(f in clean_line.lower() for f in ["cotton", "polyester", "linen", "satin", "silk", "spandex"]):
+                    if len(clean_line) < 100:  # Prevent it from grabbing entire descriptive paragraphs
+                        fabric_str = clean_line.lstrip("- ").strip()
+                        # Remove GSM details to keep the voice prompt clean for the AI
+                        fabric_str = re.sub(r'[,]?\s*\b\d+\s*GSM\b', '', fabric_str, flags=re.IGNORECASE).strip()
+                        return fabric_str
+                        
     except Exception:
         pass
     return default_fabric
