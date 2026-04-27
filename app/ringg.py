@@ -10,104 +10,127 @@ API_KEY = os.getenv("RINGG_API_KEY")
 BASE_URL = os.getenv("RINGG_BASE_URL")
 SHOPIFY_API_TOKEN = os.getenv("SHOPIFY_API_TOKEN")
 
-def extract_shopify_fabric(product_id, default_fabric):
+def fetch_shopify_product_data(product_id):
+    """Fetches product details and metafields from Shopify."""
     if not SHOPIFY_API_TOKEN or not product_id:
-        return default_fabric
-    url = f"https://kyyhe6-ry.myshopify.com/admin/api/2024-01/products/{product_id}.json"
+        return None, []
+    
+    headers = {"X-Shopify-Access-Token": SHOPIFY_API_TOKEN}
+    product_url = f"https://kyyhe6-ry.myshopify.com/admin/api/2024-01/products/{product_id}.json"
+    metafields_url = f"https://kyyhe6-ry.myshopify.com/admin/api/2024-01/products/{product_id}/metafields.json"
+    
+    product_data = None
+    metafields = []
+    
     try:
-        res = requests.get(url, headers={"X-Shopify-Access-Token": SHOPIFY_API_TOKEN}, timeout=5)
-        if res.status_code == 200:
-            html = res.json().get("product", {}).get("body_html", "")
+        p_res = requests.get(product_url, headers=headers, timeout=5)
+        if p_res.status_code == 200:
+            product_data = p_res.json().get("product")
             
-            # Strip out all HTML tags (<p>, <span>) and replace them with newlines
-            clean_text = re.sub(r'<[^>]+>', '\n', html)
-            
-            # Split into lines
-            for line in clean_text.split('\n'):
-                clean_line = line.strip()
-                # Find the clean bullet point containing the fabric percentage
-                if clean_line.startswith("-") and any(f in clean_line.lower() for f in ["cotton", "polyester", "linen", "satin", "silk", "spandex"]):
-                    if len(clean_line) < 100:  # Prevent it from grabbing entire descriptive paragraphs
-                        fabric_str = clean_line.lstrip("- ").strip()
-                        # Remove GSM details to keep the voice prompt clean for the AI
-                        fabric_str = re.sub(r'[,]?\s*\b\d+\s*GSM\b', '', fabric_str, flags=re.IGNORECASE).strip()
-                        return fabric_str
-                        
-    except Exception:
-        pass
-    return default_fabric
+        m_res = requests.get(metafields_url, headers=headers, timeout=5)
+        if m_res.status_code == 200:
+            metafields = m_res.json().get("metafields", [])
+    except Exception as e:
+        print(f"Shopify API error: {e}")
+        
+    return product_data, metafields
 
-def extract_shirt_details(title: str):
-    """Dynamically extracts shirt details and creates a nice short spoken name."""
+def extract_shirt_details(title: str, body_html: str = "", metafields: list = []):
+    """Dynamically extracts shirt details using Shopify data and subtractive title parsing."""
     if not title:
         return "your item", "Unknown", "100% Premium Cotton", "Regular Fit"
-        
-    t = title.lower()
     
-    # 1. Extract Fabric
+    # Initialize defaults
     fabric = "100% Premium Cotton"
-    if "linen" in t: fabric = "Linen"
-    elif "satin" in t: fabric = "Satin"
-    elif "silk" in t: fabric = "Silk"
-    elif "cotton" in t: fabric = "Cotton"
-        
-    # 2. Extract Color
-    color = "Unknown"
-    for c in ["blue", "brown", "grey", "gray", "black", "white", "red", "green", "pink", "yellow"]:
-        if c in t:
-            color = c.capitalize()
-            break
-            
-    # 3. Extract Fit
     fit = "Regular Fit"
-    if "slim" in t: fit = "Slim Fit"
-    elif "loose" in t or "oversized" in t: fit = "Oversize Fit"
-            
-    # 4. Create Short Name (strip out sizing like "- M-40" and adjectives)
-    ignore_words = {"pure", "italian", "luxe", "stretch", "regular", "fit", "premium", "slim"}
-    base_title = title.split("-")[0].strip()
+    color = "Unknown"
     
-    simplified_words = []
-    for w in base_title.split():
-        if w.lower() not in ignore_words:
-            simplified_words.append(w)
-            
-    short_name = " ".join(simplified_words)
+    # 1. Look for explicit values in Metafields first
+    product_ab_title = ""
+    for m in metafields:
+        if m['namespace'] == 'custom' and m['key'] == 'fit':
+            fit = m['value']
+        if m['namespace'] == 'custom' and m['key'] == 'product_ab_title':
+            product_ab_title = m['value']
+
+    # 2. Extract Fabric from Body HTML (Primary Source)
+    if body_html:
+        clean_text = re.sub(r'<[^>]+>', '\n', body_html)
+        for line in clean_text.split('\n'):
+            clean_line = line.strip()
+            if clean_line.startswith("-") and any(f in clean_line.lower() for f in ["cotton", "polyester", "linen", "satin", "silk", "spandex", "viscose"]):
+                if len(clean_line) < 100:
+                    fabric_str = clean_line.lstrip("- ").strip()
+                    fabric = re.sub(r'[,]?\s*\b\d+\s*GSM\b', '', fabric_str, flags=re.IGNORECASE).strip()
+                    break
+
+    # 3. If Fabric is still default, try title guessing
+    t = title.lower()
+    if fabric == "100% Premium Cotton":
+        if "linen" in t: fabric = "Linen"
+        elif "satin" in t: fabric = "Satin"
+        elif "silk" in t: fabric = "Silk"
+        elif "knit" in t: fabric = "Knit"
+
+    # 4. If Fit is still default, try title guessing
+    if fit == "Regular Fit":
+        if "slim" in t: fit = "Slim Fit"
+        elif "loose" in t or "oversized" in t: fit = "Oversize Fit"
+
+    # 5. Extract Color using "Subtractive" Logic
+    # Use product_ab_title if available as it's usually cleaner
+    base_name = product_ab_title if product_ab_title else title.split("-")[0].strip()
+    
+    # Words to subtract
+    subtract_keywords = {
+        "pure", "italian", "luxe", "stretch", "regular", "fit", "premium", "slim", 
+        "shirt", "pant", "kurta", "knitted", "knit", "textured", "satin", "linen", 
+        "cotton", "solid", "printed", "print", "blend", "lycra", "solid", "shirt",
+        "sand" # Sand is technically part of "Sand Beige", maybe keep it? Let's keep specific color words.
+    }
+    
+    color_words = []
+    for word in base_name.split():
+        clean_word = word.strip(",.()").lower()
+        if clean_word not in subtract_keywords:
+            color_words.append(word)
+    
+    if color_words:
+        color = " ".join(color_words)
+        
+    # Final cleanup: if short name is just words we subtracted, fallback to base name
+    short_name = color if color != "Unknown" else base_name
 
     return short_name, color, fabric, fit
 
 def get_preferred_language(state: str) -> str:
     """Decides the AI's spoken language based on the customer's state."""
     if not state:
-        return "hindi"  # Default fallback
+        return "hindi"
     s = state.lower().strip()
-    
-    # South Indian states defaults
     if s in ["karnataka", "kerala", "tamil nadu", "andhra pradesh", "telangana"]:
-        return "english" # Or change to "kannada", "tamil" if Ringg supports it
-        
+        return "english"
     return "hindi"
 
 def call_ringg_ai(user, agent_id="3f3a9cc0-2362-440e-a6c4-8de4a8d99979", from_number_id="3a75bd88-4872-4845-a580-2e9bec58961e"):
-    # Official Ringg API Endpoint for outbound calls
     url = f"{BASE_URL}/ca/api/v0/calling/outbound/individual" 
 
-    # Extract all the smart details from the raw title
     items = user.get("items", [])
     raw_title = items[0].get("title") if items else ""
     product_id = items[0].get("product_id") if items else None
     
-    short_name, shirt_colour, shirt_fabric_fallback, shirt_fit = extract_shirt_details(raw_title)
+    # Fetch real-time data from Shopify
+    product_data, metafields = fetch_shopify_product_data(product_id)
+    body_html = product_data.get("body_html", "") if product_data else ""
     
-    # Securely hit Shopify API to extract exactly what the true fabric percentage is
-    shirt_fabric = extract_shopify_fabric(product_id, shirt_fabric_fallback)
+    # Smarter detail extraction
+    short_name, shirt_colour, shirt_fabric, shirt_fit = extract_shirt_details(raw_title, body_html, metafields)
 
-    # Figure out the best language based on the buyer's location
     spoken_language = get_preferred_language(user.get("state", ""))
 
     phone = str(user["phone"])
     if not phone.startswith("+"):
-        phone = f"+91{phone[-10:]}" # basic fallback for Indian numbers
+        phone = f"+91{phone[-10:]}"
 
     payload = {
         "name": user.get("name", "Customer"),
@@ -121,13 +144,9 @@ def call_ringg_ai(user, agent_id="3f3a9cc0-2362-440e-a6c4-8de4a8d99979", from_nu
             "shirt_price": str(user.get("cart_value")),
             "language": spoken_language,
             "mobile_number": phone,
-            
-            # Dynamically extracted variables
             "shirt_colour": shirt_colour,                
             "shirt_fabric": shirt_fabric,  
             "fit": shirt_fit,                  
-
-            # You can also pass the recovery URL in case the prompt needs it!
             "recovery_url": user.get("recovery_url", "")
         }
     }
@@ -139,11 +158,9 @@ def call_ringg_ai(user, agent_id="3f3a9cc0-2362-440e-a6c4-8de4a8d99979", from_nu
 
     try:
         response = requests.post(url, json=payload, headers=headers, timeout=10)
-
         if response.status_code in [200, 201]:
             return True, response.json()
         else:
             return False, response.text
-
     except Exception as e:
         return False, str(e)
