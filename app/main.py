@@ -10,7 +10,9 @@ async def gokwik_webhook(request: Request):
     data = await request.json()
     print("FULL PAYLOAD:", data)
 
-    phone = data.get("phone")
+    # Phone is nested in GoKwik payload
+    customer = data.get("customer", {})
+    phone = customer.get("phone") or data.get("address", {}).get("phone")
 
     if not phone:
         return {"status": "ignored"}
