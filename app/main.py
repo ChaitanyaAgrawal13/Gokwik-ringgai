@@ -8,7 +8,7 @@ app = FastAPI()
 @app.post("/webhooks/gokwik")
 async def gokwik_webhook(request: Request):
     data = await request.json()
-    print("Received GoKwik Webhook Data:", data)
+    print("FULL PAYLOAD:", data)
 
     phone = data.get("phone")
 
