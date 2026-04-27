@@ -86,7 +86,8 @@ def extract_shirt_details(title: str, body_html: str = "", metafields: list = []
         "pure", "italian", "luxe", "stretch", "regular", "fit", "premium", "slim", 
         "shirt", "pant", "kurta", "knitted", "knit", "textured", "satin", "linen", 
         "cotton", "solid", "printed", "print", "blend", "lycra", "solid", "shirt",
-        "sand" # Sand is technically part of "Sand Beige", maybe keep it? Let's keep specific color words.
+        "sand", "viscose", "nylon", "spandex", "crinkle", "texture", "relaxed",
+        "oversize", "oversized", "dobby", "twill", "oxford"
     }
     
     color_words = []
