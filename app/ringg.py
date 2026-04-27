@@ -7,15 +7,23 @@ load_dotenv()
 API_KEY = os.getenv("RINGG_API_KEY")
 BASE_URL = os.getenv("RINGG_BASE_URL")
 
-def call_ringg_ai(user):
+def call_ringg_ai(user, assistant_id="YOUR_ASSISTANT_ID_GOES_HERE", language="english"):
     url = f"{BASE_URL}/ca/api/v0/call"  # ⚠️ confirm endpoint
+
+    # Grab the primary product name from the items list we saved
+    items = user.get("items", [])
+    product_name = items[0].get("title") if items else "your item"
 
     payload = {
         "phone_number": user["phone"],
-        "customer_name": user.get("name"),
-        "metadata": {
-            "cart_value": user.get("cart_value"),
-            "source": "abandoned_checkout"
+        "assistant_id": assistant_id,     # <-- This tells Ringg WHICH assistant to use
+        "language": language,             # <-- If Ringg supports language targeting
+        "variables": {                    # <-- These map directly to {{variables}} in your Ringg AI prompt
+            "customer_name": user.get("name", "there"),
+            "product_name": product_name,
+            "cart_value": str(user.get("cart_value")),
+            "recovery_url": user.get("recovery_url", ""),
+            "city": user.get("city", "your city")
         }
     }
 
