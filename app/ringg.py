@@ -88,7 +88,8 @@ def extract_shirt_details(title: str, body_html: str = "", metafields: list = []
         "shirt", "pant", "kurta", "knitted", "knit", "textured", "satin", "linen", 
         "cotton", "solid", "printed", "print", "blend", "lycra", "solid", "shirt",
         "sand", "viscose", "nylon", "spandex", "crinkle", "texture", "relaxed",
-        "oversize", "oversized", "dobby", "twill", "oxford", "tencel", "lyocell"
+        "oversize", "oversized", "dobby", "twill", "oxford", "tencel", "lyocell",
+        "tencel™", "lyocell™"
     }
     
     color_words = []
