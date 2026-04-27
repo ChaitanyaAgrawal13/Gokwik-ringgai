@@ -58,7 +58,7 @@ def extract_shirt_details(title: str, body_html: str = "", metafields: list = []
         clean_text = re.sub(r'<[^>]+>', '\n', body_html)
         for line in clean_text.split('\n'):
             clean_line = line.strip()
-            if clean_line.startswith("-") and any(f in clean_line.lower() for f in ["cotton", "polyester", "linen", "satin", "silk", "spandex", "viscose"]):
+            if clean_line.startswith("-") and any(f in clean_line.lower() for f in ["cotton", "polyester", "linen", "satin", "silk", "spandex", "viscose", "tencel", "lyocell"]):
                 if len(clean_line) < 100:
                     fabric_str = clean_line.lstrip("- ").strip()
                     fabric = re.sub(r'[,]?\s*\b\d+\s*GSM\b', '', fabric_str, flags=re.IGNORECASE).strip()
@@ -71,6 +71,7 @@ def extract_shirt_details(title: str, body_html: str = "", metafields: list = []
         elif "satin" in t: fabric = "Satin"
         elif "silk" in t: fabric = "Silk"
         elif "knit" in t: fabric = "Knit"
+        elif "tencel" in t: fabric = "Tencel"
 
     # 4. If Fit is still default, try title guessing
     if fit == "Regular Fit":
@@ -87,7 +88,7 @@ def extract_shirt_details(title: str, body_html: str = "", metafields: list = []
         "shirt", "pant", "kurta", "knitted", "knit", "textured", "satin", "linen", 
         "cotton", "solid", "printed", "print", "blend", "lycra", "solid", "shirt",
         "sand", "viscose", "nylon", "spandex", "crinkle", "texture", "relaxed",
-        "oversize", "oversized", "dobby", "twill", "oxford"
+        "oversize", "oversized", "dobby", "twill", "oxford", "tencel", "lyocell"
     }
     
     color_words = []
