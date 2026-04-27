@@ -33,3 +33,7 @@ else:
         print(json.dumps(response, indent=2))
     else:
         print(response)
+
+    if success:
+        collection.delete_one({"_id": user["_id"]})
+        print(f"\n🗑️ Lead successfully called and removed from MongoDB.")

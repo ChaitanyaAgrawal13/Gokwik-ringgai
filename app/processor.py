@@ -21,18 +21,8 @@ def process_abandoned_checkouts():
         success, response = call_ringg_ai(user)
 
         if success:
-            collection.update_one(
-                {"_id": user["_id"]},
-                {
-                    "$set": {
-                        "called": True,
-                        "last_called_at": now,
-                        "ringg_response": response
-                    },
-                    "$inc": {"call_attempts": 1}
-                }
-            )
-            print(f"✅ Called {user['phone']}")
+            collection.delete_one({"_id": user["_id"]})
+            print(f"✅ Called and removed {user['phone']} from DB")
         else:
             collection.update_one(
                 {"_id": user["_id"]},
