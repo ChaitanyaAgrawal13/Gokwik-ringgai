@@ -12,8 +12,9 @@ def create_checkout(data):
     for item in raw_items:
         items.append({
             "title": item.get("title"),
-            "price": item.get("price", 0) / 100, # Converting paisa to INR usually if it's 99900 -> 999
-            "quantity": item.get("quantity", 1)
+            "price": item.get("price", 0) / 100, 
+            "quantity": item.get("quantity", 1),
+            "product_id": item.get("product_id")  # Extremely important for the Shopify API lookup!
         })
 
     return {
