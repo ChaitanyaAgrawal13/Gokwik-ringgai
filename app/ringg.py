@@ -4,8 +4,26 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+import re
+
 API_KEY = os.getenv("RINGG_API_KEY")
 BASE_URL = os.getenv("RINGG_BASE_URL")
+SHOPIFY_API_TOKEN = os.getenv("SHOPIFY_API_TOKEN")
+
+def extract_shopify_fabric(product_id, default_fabric):
+    if not SHOPIFY_API_TOKEN or not product_id:
+        return default_fabric
+    url = f"https://kyyhe6-ry.myshopify.com/admin/api/2024-01/products/{product_id}.json"
+    try:
+        res = requests.get(url, headers={"X-Shopify-Access-Token": SHOPIFY_API_TOKEN}, timeout=5)
+        if res.status_code == 200:
+            html = res.json().get("product", {}).get("body_html", "")
+            match = re.search(r"-\s*([\d% \w,\.]+(?:Cotton|Polyester|Linen|Satin|Silk|Spandex|Viscose|Lycra)[^<]*)", html, re.IGNORECASE)
+            if match:
+                return match.group(1).strip()
+    except Exception:
+        pass
+    return default_fabric
 
 def extract_shirt_details(title: str):
     """Dynamically extracts shirt details and creates a nice short spoken name."""
@@ -65,7 +83,12 @@ def call_ringg_ai(user, agent_id="3f3a9cc0-2362-440e-a6c4-8de4a8d99979", from_nu
     # Extract all the smart details from the raw title
     items = user.get("items", [])
     raw_title = items[0].get("title") if items else ""
-    short_name, shirt_colour, shirt_fabric, shirt_fit = extract_shirt_details(raw_title)
+    product_id = items[0].get("product_id") if items else None
+    
+    short_name, shirt_colour, shirt_fabric_fallback, shirt_fit = extract_shirt_details(raw_title)
+    
+    # Securely hit Shopify API to extract exactly what the true fabric percentage is
+    shirt_fabric = extract_shopify_fabric(product_id, shirt_fabric_fallback)
 
     # Figure out the best language based on the buyer's location
     spoken_language = get_preferred_language(user.get("state", ""))
