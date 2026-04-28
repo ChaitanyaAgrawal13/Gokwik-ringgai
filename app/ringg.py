@@ -115,12 +115,46 @@ def get_preferred_language(state: str) -> str:
         return "english"
     return "hindi"
 
+def expand_size(size_abbr: str) -> str:
+    """Expands size abbreviations to spoken-friendly names."""
+    size_map = {
+        "xs": "Extra Small",
+        "s": "Small",
+        "m": "Medium",
+        "l": "Large",
+        "xl": "XL",
+        "xxl": "Double XL",
+        "xxxl": "Triple XL",
+        "2xl": "Double XL",
+        "3xl": "Triple XL",
+    }
+    return size_map.get(size_abbr.lower().strip(), size_abbr)
+
+def extract_size_from_title(title: str) -> str:
+    """Extracts and expands the size from a title like 'Shirt - L-42' or 'Shirt - XXL-46'."""
+    if "-" not in title:
+        return ""
+    # The size is typically after the last " - ", e.g. "Shirt - L-42"
+    parts = title.rsplit(" - ", 1)
+    if len(parts) < 2:
+        return ""
+    size_part = parts[1].strip()  # e.g. "L-42" or "XXL-46"
+    # Extract just the letter portion before the numeric part
+    size_abbr = size_part.split("-")[0].strip()  # e.g. "L" or "XXL"
+    if size_abbr:
+        return expand_size(size_abbr)
+    return ""
+
 def call_ringg_ai(user, agent_id="3f3a9cc0-2362-440e-a6c4-8de4a8d99979", from_number_id="3a75bd88-4872-4845-a580-2e9bec58961e"):
     url = f"{BASE_URL}/ca/api/v0/calling/outbound/individual" 
 
     items = user.get("items", [])
     raw_title = items[0].get("title") if items else ""
     product_id = items[0].get("product_id") if items else None
+    item_price = str(items[0].get("price", "")) if items else ""
+    
+    # Extract spoken size from title (e.g. "L-42" -> "Large")
+    shirt_size = extract_size_from_title(raw_title) if raw_title else ""
     
     # Fetch real-time data from Shopify
     product_data, metafields = fetch_shopify_product_data(product_id)
@@ -144,7 +178,8 @@ def call_ringg_ai(user, agent_id="3f3a9cc0-2362-440e-a6c4-8de4a8d99979", from_nu
             "callee_name": user.get("name", "Customer"),
             "original_callee_name": user.get("name", "Customer"),
             "shirt_name": short_name,
-            "shirt_price": str(user.get("cart_value")),
+            "shirt_price": item_price,
+            "shirt_size": shirt_size,
             "language": spoken_language,
             "mobile_number": phone,
             "shirt_colour": shirt_colour,                
