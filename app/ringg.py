@@ -101,8 +101,8 @@ def extract_shirt_details(title: str, body_html: str = "", metafields: list = []
     if color_words:
         color = " ".join(color_words)
         
-    # Final cleanup: if short name is just words we subtracted, fallback to base name
-    short_name = color if color != "Unknown" else base_name
+    # Pass the unfiltered original title as the spoken name
+    short_name = title
 
     return short_name, color, fabric, fit
 
