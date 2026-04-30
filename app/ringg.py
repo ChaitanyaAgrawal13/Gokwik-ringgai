@@ -166,6 +166,15 @@ def call_ringg_ai(user, agent_id="3f3a9cc0-2362-440e-a6c4-8de4a8d99979", from_nu
     product_data, metafields = fetch_shopify_product_data(product_id)
     body_html = product_data.get("body_html", "") if product_data else ""
     
+    # Extract Product Image URL
+    product_image_url = ""
+    if product_data:
+        image_obj = product_data.get("image")
+        if image_obj:
+            product_image_url = image_obj.get("src", "")
+        elif product_data.get("images"):
+            product_image_url = product_data["images"][0].get("src", "")
+
     # Smarter detail extraction
     short_name, shirt_colour, shirt_fabric, shirt_fit = extract_shirt_details(raw_title, body_html, metafields)
 
@@ -190,7 +199,21 @@ def call_ringg_ai(user, agent_id="3f3a9cc0-2362-440e-a6c4-8de4a8d99979", from_nu
             "shirt_colour": shirt_colour,                
             "shirt_fabric": shirt_fabric,  
             "fit": shirt_fit,                  
-            "recovery_url": user.get("recovery_url", "")
+            "recovery_url": user.get("recovery_url", ""),
+            "product_image_url": product_image_url
+        },
+        "call_config": {
+            "call_retry_config": {
+                "retry_count": 3,
+                "retry_busy": 30,
+                "retry_not_picked": 30,
+                "retry_failed": 30
+            },
+            "call_time": {
+                "call_start_time": "09:00",
+                "call_end_time": "22:00",
+                "timezone": "Asia/Kolkata"
+            }
         }
     }
 
