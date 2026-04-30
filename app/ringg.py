@@ -151,7 +151,7 @@ def expand_size_in_title(title: str) -> str:
         expanded = expand_size(size_part)
         return f"{parts[0]} - {expanded}"
 
-def call_ringg_ai(user, agent_id="3f3a9cc0-2362-440e-a6c4-8de4a8d99979", from_number_id="3a75bd88-4872-4845-a580-2e9bec58961e"):
+def call_ringg_ai(user, agent_id="3f3a9cc0-2362-440e-a6c4-8de4a8d99979", from_number_id="3a75bd88-4872-4845-a580-2e9bec58961e", scheduled_at=None):
     url = f"{BASE_URL}/ca/api/v0/calling/outbound/individual" 
 
     items = user.get("items", [])
@@ -212,7 +212,8 @@ def call_ringg_ai(user, agent_id="3f3a9cc0-2362-440e-a6c4-8de4a8d99979", from_nu
             "call_time": {
                 "call_start_time": "09:00",
                 "call_end_time": "22:00",
-                "timezone": "Asia/Kolkata"
+                "timezone": "Asia/Kolkata",
+                "scheduled_at": scheduled_at
             }
         }
     }

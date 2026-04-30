@@ -1,12 +1,13 @@
-from fastapi import FastAPI, Request
-from datetime import datetime
+from fastapi import FastAPI, Request, BackgroundTasks
+from datetime import datetime, timedelta
 from app.db import collection
 from app.models import create_checkout
+from app.ringg import call_ringg_ai
 
 app = FastAPI()
 
 @app.post("/webhooks/gokwik")
-async def gokwik_webhook(request: Request):
+async def gokwik_webhook(request: Request, background_tasks: BackgroundTasks):
     data = await request.json()
     print("FULL PAYLOAD:", data)
 
@@ -31,7 +32,12 @@ async def gokwik_webhook(request: Request):
     checkout = create_checkout(data)
     collection.insert_one(checkout)
 
-    return {"status": "stored"}
+    # Schedule the call for 40 minutes later
+    scheduled_time = (datetime.utcnow() + timedelta(minutes=40)).strftime("%Y-%m-%dT%H:%M:%S")
+    background_tasks.add_task(call_ringg_ai, checkout, scheduled_at=scheduled_time)
+
+    return {"status": "stored_and_scheduled"}
+
 
 @app.post("/webhooks/ringg")
 async def ringg_webhook(request: Request):
