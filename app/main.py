@@ -48,9 +48,13 @@ async def ringg_webhook(request: Request):
 
     if event_type == "all_processing_completed":
         analysis = data.get("client_analysis", {})
+        print(f"📊 Client Analysis Received: {analysis}")
         
-        # Check if customer asked for a message
-        if analysis.get("whatsapp_message_asked") is True:
+        # Check if customer asked for a message (handling both boolean and string "true")
+        asked = analysis.get("whatsapp_message_asked")
+        print(f"❓ WhatsApp Asked Flag: {asked} (Type: {type(asked)})")
+
+        if asked is True or str(asked).lower() == "true":
             custom_args = data.get("custom_args_values", {})
             
             phone = data.get("to_number")
@@ -59,11 +63,13 @@ async def ringg_webhook(request: Request):
             link = custom_args.get("recovery_url")
             image = custom_args.get("product_image_url")
 
-            print(f"✅ Customer asked for link. Triggering WhatsApp to {phone}")
+            print(f"✅ Triggering WhatsApp to {phone} for {product}")
             
             from app.kwikengage import send_whatsapp_recovery
             send_whatsapp_recovery(phone, name, product, link, image)
             
             return {"status": "whatsapp_sent"}
+        else:
+            print("ℹ️ WhatsApp message not requested by customer according to AI analysis.")
             
     return {"status": "ignored"}
