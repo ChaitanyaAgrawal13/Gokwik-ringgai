@@ -32,8 +32,9 @@ async def gokwik_webhook(request: Request, background_tasks: BackgroundTasks):
     checkout = create_checkout(data)
     collection.insert_one(checkout)
 
-    # Schedule the call for 40 minutes later (Added 'Z' to ensure UTC)
-    scheduled_time = (datetime.utcnow() + timedelta(minutes=40)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    # Schedule the call for 40 minutes later in IST (Agent's timezone)
+    ist_now = datetime.utcnow() + timedelta(hours=5, minutes=30)
+    scheduled_time = (ist_now + timedelta(minutes=40)).strftime("%Y-%m-%dT%H:%M:%S")
     print(f"🕒 Scheduling call for {phone} at {scheduled_time} (40 mins from now)")
     background_tasks.add_task(call_ringg_ai, checkout, scheduled_at=scheduled_time)
 
