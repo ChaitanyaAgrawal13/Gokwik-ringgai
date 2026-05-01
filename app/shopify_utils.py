@@ -6,14 +6,14 @@ SHOPIFY_TOKEN = os.getenv("SHOPIFY_API_TOKEN")
 # We extract the domain dynamically or use a default
 STORE_DOMAIN = "kyyhe6-ry.myshopify.com" 
 
-def has_completed_order(email, phone):
+def has_completed_order(email, phone, since_time):
     """
     Checks if there's a completed order for this email or phone 
-    created in the last 60 minutes.
+    created since the abandonment time.
     """
     if not SHOPIFY_TOKEN:
         print("⚠️ Shopify token missing, skipping check (defaulting to No Order)")
-        return False
+        return None
 
     url = f"https://{STORE_DOMAIN}/admin/api/2023-10/orders.json"
     headers = {
@@ -21,9 +21,7 @@ def has_completed_order(email, phone):
         "Content-Type": "application/json"
     }
     
-    # We check orders from the last hour to be safe
-    since_time = (datetime.utcnow() - timedelta(hours=1)).isoformat()
-    
+    # Use the provided abandonment time (must be ISO string)
     params = {
         "status": "any",
         "created_at_min": since_time,

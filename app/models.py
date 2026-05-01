@@ -17,8 +17,11 @@ def create_checkout(data):
             "product_id": item.get("product_id")  # Extremely important for the Shopify API lookup!
         })
 
+    email = customer.get("email") or address.get("email")
+
     return {
         "phone": phone,
+        "email": email,
         "name": name,
         "cart_value": data.get("total_price"),
         "items": items,

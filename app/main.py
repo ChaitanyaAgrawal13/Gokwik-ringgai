@@ -12,16 +12,18 @@ async def process_delayed_call(checkout):
     
     phone = checkout.get("phone")
     email = checkout.get("email")
+    # Convert datetime object to ISO string for Shopify
+    abandoned_at = checkout.get("created_at").isoformat()
     
     print(f"⏳ Waiting 40 minutes before checking order status for {phone}...")
     await asyncio.sleep(40 * 60)
     
-    order_id = has_completed_order(email, phone)
+    order_id = has_completed_order(email, phone, abandoned_at)
     if order_id:
-        print(f"✅ Order {order_id} found for {phone}! Skipping Ringg AI call.")
+        print(f"✅ Order {order_id} found for {phone}! (Placed after abandonment at {abandoned_at}). Skipping Ringg AI call.")
         return
         
-    print(f"📞 No order found for {phone}. Triggering Ringg AI call now.")
+    print(f"📞 No order found for {phone} since {abandoned_at}. Triggering Ringg AI call now.")
     call_ringg_ai(checkout) # This calls immediately now
 
 @app.post("/webhooks/gokwik")
