@@ -30,6 +30,9 @@ def send_whatsapp_recovery(phone, name, product_name, recovery_url, image_url):
     # URL encode the body link to prevent WhatsApp markdown issues
     safe_body_url = tracked_url.replace("_", "%5F")
 
+    # Clean the image URL (remove Shopify versioning like ?v=...)
+    clean_image_url = image_url.split("?")[0] if image_url else "https://cdn.shopify.com/s/files/1/0778/6158/5140/files/Oxfordgrey.png"
+
     # Prepare the payload
     payload = {
         "to": phone,
@@ -58,7 +61,7 @@ def send_whatsapp_recovery(phone, name, product_name, recovery_url, image_url):
                                 "type": "media",
                                 "media": {
                                     "type": "image",
-                                    "url": image_url if image_url else "https://cdn.shopify.com/s/files/1/0778/6158/5140/files/Oxfordgrey.png?v=1777031478"
+                                    "url": clean_image_url
                                 }
                             }
                         ]
