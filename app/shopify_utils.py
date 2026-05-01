@@ -43,10 +43,18 @@ def has_completed_order(email, phone, since_time):
                 return order_name
             
             # Check phone match (normalizing to last 10 digits)
-            order_phone = order.get("phone") or (order.get("customer") or {}).get("phone")
-            if order_phone and phone:
-                if phone[-10:] == str(order_phone)[-10:]:
-                    return order_name
+            order_phones = [
+                order.get("phone"),
+                (order.get("customer") or {}).get("phone"),
+                (order.get("shipping_address") or {}).get("phone"),
+                (order.get("billing_address") or {}).get("phone")
+            ]
+            
+            # Remove None values and normalize to last 10 digits
+            order_phones = [str(p)[-10:] for p in order_phones if p]
+            
+            if phone and phone[-10:] in order_phones:
+                return order_name
                     
         return None
     except Exception as e:
