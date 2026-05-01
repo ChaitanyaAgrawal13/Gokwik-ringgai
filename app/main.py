@@ -6,6 +6,24 @@ from app.ringg import call_ringg_ai
 
 app = FastAPI()
 
+async def process_delayed_call(checkout):
+    import asyncio
+    from app.shopify_utils import has_completed_order
+    
+    phone = checkout.get("phone")
+    email = checkout.get("email")
+    
+    print(f"⏳ Waiting 40 minutes before checking order status for {phone}...")
+    await asyncio.sleep(40 * 60)
+    
+    order_id = has_completed_order(email, phone)
+    if order_id:
+        print(f"✅ Order {order_id} found for {phone}! Skipping Ringg AI call.")
+        return
+        
+    print(f"📞 No order found for {phone}. Triggering Ringg AI call now.")
+    call_ringg_ai(checkout) # This calls immediately now
+
 @app.post("/webhooks/gokwik")
 async def gokwik_webhook(request: Request, background_tasks: BackgroundTasks):
     data = await request.json()
@@ -32,13 +50,10 @@ async def gokwik_webhook(request: Request, background_tasks: BackgroundTasks):
     checkout = create_checkout(data)
     collection.insert_one(checkout)
 
-    # Schedule the call for 40 minutes later in IST (Agent's timezone)
-    ist_now = datetime.utcnow() + timedelta(hours=5, minutes=30)
-    scheduled_time = (ist_now + timedelta(minutes=40)).strftime("%Y-%m-%dT%H:%M:%S")
-    print(f"🕒 Scheduling call for {phone} at {scheduled_time} (40 mins from now)")
-    background_tasks.add_task(call_ringg_ai, checkout, scheduled_at=scheduled_time)
+    print(f"🕒 Background task started for {phone}. Will check & call in 40 mins.")
+    background_tasks.add_task(process_delayed_call, checkout)
 
-    return {"status": "stored_and_scheduled"}
+    return {"status": "stored_and_queued"}
 
 
 @app.post("/webhooks/ringg")

@@ -212,11 +212,13 @@ def call_ringg_ai(user, agent_id="3f3a9cc0-2362-440e-a6c4-8de4a8d99979", from_nu
             "call_time": {
                 "call_start_time": "09:00",
                 "call_end_time": "22:00",
-                "timezone": "Asia/Kolkata",
-                "scheduled_at": scheduled_at
+                "timezone": "Asia/Kolkata"
             }
         }
     }
+
+    if scheduled_at:
+        payload["call_config"]["call_time"]["scheduled_at"] = scheduled_at
 
     headers = {
         "X-API-KEY": API_KEY,
