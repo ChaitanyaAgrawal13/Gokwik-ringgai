@@ -224,10 +224,14 @@ def call_ringg_ai(user, agent_id="3f3a9cc0-2362-440e-a6c4-8de4a8d99979", from_nu
     }
 
     try:
+        print(f"🚀 Sending call request to Ringg AI for {phone} (Scheduled: {scheduled_at})...")
         response = requests.post(url, json=payload, headers=headers, timeout=10)
         if response.status_code in [200, 201]:
+            print(f"✅ Ringg AI Response ({response.status_code}): Call successfully queued.")
             return True, response.json()
         else:
+            print(f"❌ Ringg AI Error ({response.status_code}): {response.text}")
             return False, response.text
     except Exception as e:
+        print(f"💥 Exception during Ringg AI call: {str(e)}")
         return False, str(e)

@@ -34,6 +34,7 @@ async def gokwik_webhook(request: Request, background_tasks: BackgroundTasks):
 
     # Schedule the call for 40 minutes later
     scheduled_time = (datetime.utcnow() + timedelta(minutes=40)).strftime("%Y-%m-%dT%H:%M:%S")
+    print(f"🕒 Scheduling call for {phone} at {scheduled_time} (40 mins from now)")
     background_tasks.add_task(call_ringg_ai, checkout, scheduled_at=scheduled_time)
 
     return {"status": "stored_and_scheduled"}
