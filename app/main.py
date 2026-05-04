@@ -73,7 +73,7 @@ async def ringg_webhook(request: Request):
         print(f"📊 Client Analysis Received: {analysis}")
         
         # Store analysis in DB
-        collection.update_one(
+        collection.find_one_and_update(
             {"phone": phone[-10:]}, # Matching last 10 digits
             {"$set": {
                 "call_analysis": analysis,
@@ -102,7 +102,7 @@ async def ringg_webhook(request: Request):
             success, msg_id = send_whatsapp_recovery(phone, name, product, link, image)
             
             if success:
-                collection.update_one(
+                collection.find_one_and_update(
                     {"phone": phone[-10:]},
                     {"$set": {
                         "status": "whatsapp_sent",
@@ -113,7 +113,7 @@ async def ringg_webhook(request: Request):
                     sort=[("created_at", -1)]
                 )
             else:
-                collection.update_one(
+                collection.find_one_and_update(
                     {"phone": phone[-10:]},
                     {"$set": {
                         "status": "whatsapp_failed",
