@@ -29,6 +29,13 @@ def create_checkout(data):
         "city": address.get("city"),
         "state": address.get("state"),
         "created_at": datetime.utcnow(),
+        "status": "abandoned",  # abandoned, called, whatsapp_sent, converted
+        "call_analysis": None,
+        "call_duration": 0,
+        "whatsapp_sent": False,
+        "whatsapp_sent_at": None,
+        "converted": False,
+        "order_id": None,
         "called": False,
         "call_attempts": 0,
         "last_called_at": None,

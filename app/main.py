@@ -67,7 +67,22 @@ async def ringg_webhook(request: Request):
 
     if event_type == "all_processing_completed":
         analysis = data.get("client_analysis", {})
+        call_duration = data.get("call_duration", 0)
+        phone = data.get("to_number")
+        
         print(f"📊 Client Analysis Received: {analysis}")
+        
+        # Store analysis in DB
+        collection.update_one(
+            {"phone": phone[-10:]}, # Matching last 10 digits
+            {"$set": {
+                "call_analysis": analysis,
+                "call_duration": call_duration,
+                "status": "called",
+                "last_called_at": datetime.utcnow()
+            }},
+            sort=[("created_at", -1)] # Get most recent
+        )
         
         # Check if customer asked for a message (handling both boolean and string "true")
         asked = analysis.get("whatsapp_message_asked")
@@ -76,7 +91,6 @@ async def ringg_webhook(request: Request):
         if asked is True or str(asked).lower() == "true":
             custom_args = data.get("custom_args_values", {})
             
-            phone = data.get("to_number")
             name = custom_args.get("callee_name", "Customer")
             product = custom_args.get("shirt_name", "your item")
             link = custom_args.get("recovery_url")
@@ -85,10 +99,57 @@ async def ringg_webhook(request: Request):
             print(f"✅ Triggering WhatsApp to {phone} for {product}")
             
             from app.kwikengage import send_whatsapp_recovery
-            send_whatsapp_recovery(phone, name, product, link, image)
+            success, msg_id = send_whatsapp_recovery(phone, name, product, link, image)
             
-            return {"status": "whatsapp_sent"}
+            if success:
+                collection.update_one(
+                    {"phone": phone[-10:]},
+                    {"$set": {
+                        "status": "whatsapp_sent",
+                        "whatsapp_sent": True,
+                        "whatsapp_message_id": msg_id,
+                        "whatsapp_sent_at": datetime.utcnow()
+                    }},
+                    sort=[("created_at", -1)]
+                )
+            else:
+                collection.update_one(
+                    {"phone": phone[-10:]},
+                    {"$set": {
+                        "status": "whatsapp_failed",
+                        "last_error": "Kwikengage API failure (likely Meta restriction)",
+                        "whatsapp_failed_at": datetime.utcnow()
+                    }},
+                    sort=[("created_at", -1)]
+                )
+            
+            return {"status": "whatsapp_processed"}
         else:
             print("ℹ️ WhatsApp message not requested by customer according to AI analysis.")
             
     return {"status": "ignored"}
+
+@app.post("/webhooks/kwikengage")
+async def kwikengage_webhook(request: Request):
+    data = await request.json()
+    print("📡 RECEIVED KWIKENGAGE DELIVERY STATUS:", data)
+    
+    # Typically includes: status, messageId, to
+    status = data.get("status")
+    msg_id = data.get("messageId") or data.get("id")
+    phone = data.get("to")
+    
+    if msg_id:
+        update_data = {"whatsapp_delivery_status": status}
+        if status == "failed":
+            update_data["status"] = "whatsapp_failed"
+            update_data["last_error"] = data.get("error") or "Delivery failed"
+        elif status in ["delivered", "read"]:
+            update_data["whatsapp_delivered"] = True
+            
+        collection.update_one(
+            {"whatsapp_message_id": msg_id},
+            {"$set": update_data}
+        )
+        
+    return {"status": "received"}

@@ -84,8 +84,13 @@ def send_whatsapp_recovery(phone, name, product_name, recovery_url, image_url):
 
     try:
         response = requests.post(BASE_URL, headers=headers, json=payload, timeout=10)
-        print(f"📡 Kwikengage Response ({response.status_code}):", response.text)
-        return response.status_code in [200, 201]
+        res_data = response.json()
+        print(f"📡 Kwikengage Response ({response.status_code}):", res_data)
+        
+        # Kwikengage usually returns messageId or id
+        msg_id = res_data.get("messageId") or res_data.get("id")
+        
+        return response.status_code in [200, 201], msg_id
     except Exception as e:
         print(f"❌ Kwikengage Error: {e}")
-        return False
+        return False, None
