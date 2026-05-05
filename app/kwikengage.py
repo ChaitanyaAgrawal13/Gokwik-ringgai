@@ -13,29 +13,34 @@ def send_whatsapp_recovery(phone, name, product_name, recovery_url, image_url):
     """Sends a WhatsApp recovery message via Kwikengage."""
     if not API_KEY or not TEMPLATE_ID:
         print("❌ Kwikengage credentials missing")
-        return False
+        return False, None
 
     headers = {
         "Authorization": API_KEY,
         "Content-Type": "application/json"
     }
 
-    import urllib.parse
     # Add UTM parameters to the recovery URL
     if "?" in recovery_url:
         tracked_url = f"{recovery_url}&utm_source=ringg_ai&utm_medium=whatsapp&utm_campaign=recovery"
     else:
         tracked_url = f"{recovery_url}?utm_source=ringg_ai&utm_medium=whatsapp&utm_campaign=recovery"
 
-    # URL encode the body link to prevent WhatsApp markdown issues
-    safe_body_url = tracked_url.replace("_", "%5F")
-
-    # Clean the image URL (remove Shopify versioning like ?v=...)
+    # Clean the image URL
     clean_image_url = image_url.split("?")[0] if image_url else "https://cdn.shopify.com/s/files/1/0778/6158/5140/files/Oxfordgrey.png"
 
-    # Prepare the payload
+    # Normalize phone number (handle +91, 91, or just 10 digits)
+    clean_phone = phone.replace("+", "").replace(" ", "").replace("-", "")
+    if len(clean_phone) == 10:
+        to_phone = f"+91{clean_phone}"
+    elif len(clean_phone) == 12 and clean_phone.startswith("91"):
+        to_phone = f"+{clean_phone}"
+    else:
+        to_phone = f"+{clean_phone}" if not phone.startswith("+") else phone
+
+    # Prepare the payload according to Kwikengage v2 structure
     payload = {
-        "to": phone,
+        "to": to_phone,
         "channel": "whatsapp",
         "content": {
             "type": "template",
@@ -43,17 +48,6 @@ def send_whatsapp_recovery(phone, name, product_name, recovery_url, image_url):
                 "template_id": TEMPLATE_ID,
                 "language": "en",
                 "components": [
-                    {
-                        "type": "button",
-                        "sub_type": "url",
-                        "parameters": [
-                            {
-                                "type": "text",
-                                "text": tracked_url.split("/")[-1] if "/" in tracked_url else tracked_url
-                            }
-                        ],
-                        "index": 0
-                    },
                     {
                         "type": "header",
                         "parameters": [
@@ -70,15 +64,22 @@ def send_whatsapp_recovery(phone, name, product_name, recovery_url, image_url):
                         "type": "body",
                         "parameters": [
                             {"type": "text", "text": name},          # {{1}}
-                            {"type": "text", "text": product_name},   # {{2}}
-                            {"type": "text", "text": safe_body_url}   # {{3}}
+                            {"type": "text", "text": product_name}    # {{2}}
+                        ]
+                    },
+                    {
+                        "type": "button",
+                        "sub_type": "url",
+                        "index": 0,
+                        "parameters": [
+                            {
+                                "type": "text",
+                                "text": tracked_url.split("/")[-1] if "/" in tracked_url else tracked_url
+                            }
                         ]
                     }
                 ]
             }
-        },
-        "meta_data": {
-            "destination_url": tracked_url
         }
     }
 
@@ -88,8 +89,11 @@ def send_whatsapp_recovery(phone, name, product_name, recovery_url, image_url):
             try:
                 res_data = response.json()
                 print(f"✅ KWIKENGAGE API RESPONSE: {res_data}")
-                # Try multiple common fields for ID
-                msg_id = res_data.get('id') or res_data.get('messageId') or res_data.get('data', {}).get('messageId')
+                # Extract message ID (tried multiple common fields)
+                msg_id = res_data.get('message_id_attr') or res_data.get('messageId') or res_data.get('id')
+                if not msg_id and res_data.get('data'):
+                    data = res_data.get('data')
+                    msg_id = data if isinstance(data, str) else data.get('messageId')
                 return True, msg_id
             except Exception as e:
                 print(f"⚠️ Error parsing Kwikengage response: {e}")
