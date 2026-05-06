@@ -64,19 +64,23 @@ async def ringg_webhook(request: Request):
     event_type = data.get("event_type")
     
     print(f"📞 Received Ringg Event: {event_type}")
+    print(f"FULL RINGG PAYLOAD: {data}")
 
     if event_type == "all_processing_completed":
-        analysis = data.get("client_analysis", {})
+        analysis = data.get("client_analysis") or {}
         call_duration = data.get("call_duration", 0)
         phone = data.get("to_number")
+        transcript = data.get("transcript") or analysis.get("transcript", "")
         
         print(f"📊 Client Analysis Received: {analysis}")
+        print(f"📝 Transcript: {transcript}")
         
-        # Store analysis in DB
+        # Store analysis and transcript in DB
         collection.find_one_and_update(
             {"phone": phone[-10:]}, # Matching last 10 digits
             {"$set": {
                 "call_analysis": analysis,
+                "transcript": transcript,
                 "call_duration": call_duration,
                 "status": "called",
                 "last_called_at": datetime.utcnow()
@@ -84,11 +88,30 @@ async def ringg_webhook(request: Request):
             sort=[("created_at", -1)] # Get most recent
         )
         
-        # Check if customer asked for a message (handling both boolean and string "true")
+        # Check if customer asked for a message
         asked = analysis.get("whatsapp_message_asked")
         print(f"❓ WhatsApp Asked Flag: {asked} (Type: {type(asked)})")
 
+        # FALLBACK LOGIC
+        should_trigger_whatsapp = False
+        trigger_reason = ""
+
         if asked is True or str(asked).lower() == "true":
+            should_trigger_whatsapp = True
+            trigger_reason = "AI Flag (True)"
+        else:
+            # Keyword fallback
+            keywords = ["whatsapp", "link", "message", "send", "details", "price", "cost"]
+            if any(kw in transcript.lower() for kw in keywords):
+                should_trigger_whatsapp = True
+                trigger_reason = f"Keyword Fallback (found in transcript)"
+            
+            # Duration fallback (if call > 30 seconds, assume engagement)
+            elif call_duration > 30:
+                should_trigger_whatsapp = True
+                trigger_reason = f"Duration Fallback ({call_duration}s)"
+
+        if should_trigger_whatsapp:
             custom_args = data.get("custom_args_values", {})
             
             name = custom_args.get("callee_name", "Customer")
@@ -96,7 +119,7 @@ async def ringg_webhook(request: Request):
             link = custom_args.get("recovery_url")
             image = custom_args.get("product_image_url")
 
-            print(f"✅ Triggering WhatsApp to {phone} for {product}")
+            print(f"✅ Triggering WhatsApp via {trigger_reason} to {phone} for {product}")
             
             from app.kwikengage import send_whatsapp_recovery
             success, msg_id = send_whatsapp_recovery(phone, name, product, link, image)
@@ -108,7 +131,8 @@ async def ringg_webhook(request: Request):
                         "status": "whatsapp_sent",
                         "whatsapp_sent": True,
                         "whatsapp_message_id": msg_id,
-                        "whatsapp_sent_at": datetime.utcnow()
+                        "whatsapp_sent_at": datetime.utcnow(),
+                        "trigger_reason": trigger_reason
                     }},
                     sort=[("created_at", -1)]
                 )
@@ -117,15 +141,16 @@ async def ringg_webhook(request: Request):
                     {"phone": phone[-10:]},
                     {"$set": {
                         "status": "whatsapp_failed",
-                        "last_error": "Kwikengage API failure (likely Meta restriction)",
-                        "whatsapp_failed_at": datetime.utcnow()
+                        "last_error": "Kwikengage API failure",
+                        "whatsapp_failed_at": datetime.utcnow(),
+                        "trigger_reason": trigger_reason
                     }},
                     sort=[("created_at", -1)]
                 )
             
-            return {"status": "whatsapp_processed"}
+            return {"status": "whatsapp_processed", "reason": trigger_reason}
         else:
-            print("ℹ️ WhatsApp message not requested by customer according to AI analysis.")
+            print("ℹ️ WhatsApp message not triggered: No request detected and duration too short.")
             
     return {"status": "ignored"}
 
@@ -141,10 +166,15 @@ async def kwikengage_webhook(request: Request):
     
     if msg_id:
         update_data = {"whatsapp_delivery_status": status}
+        
         if status == "failed":
+            error_code = data.get("error_code")
+            print(f"❌ WhatsApp delivery failed for {phone} with error: {error_code}")
+            
             update_data["status"] = "whatsapp_failed"
-            update_data["last_error"] = data.get("error") or "Delivery failed"
-        elif status in ["delivered", "read"]:
+            update_data["last_error"] = data.get("error_reason") or "Delivery failed"
+
+        elif status in ["delivered", "read", "seen"]:
             update_data["whatsapp_delivered"] = True
             
         collection.update_one(
