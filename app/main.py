@@ -159,27 +159,31 @@ async def kwikengage_webhook(request: Request):
     data = await request.json()
     print("📡 RECEIVED KWIKENGAGE DELIVERY STATUS:", data)
     
-    # Typically includes: status, messageId, to
     status = data.get("status")
     msg_id = data.get("messageId") or data.get("id")
-    phone = data.get("to")
     
     if msg_id:
+        # Look up the customer record by message ID to get phone
+        record = collection.find_one({"whatsapp_message_id": msg_id})
+        phone = record.get("phone") if record else "unknown"
+        
         update_data = {"whatsapp_delivery_status": status}
         
         if status == "failed":
             error_code = data.get("error_code")
-            print(f"❌ WhatsApp delivery failed for {phone} with error: {error_code}")
+            error_reason = data.get("error_reason") or "Delivery failed"
+            print(f"❌ WhatsApp delivery failed for {phone} with error: {error_code} - {error_reason}")
             
             update_data["status"] = "whatsapp_failed"
-            update_data["last_error"] = data.get("error_reason") or "Delivery failed"
+            update_data["last_error"] = error_reason
 
         elif status in ["delivered", "read", "seen"]:
             update_data["whatsapp_delivered"] = True
             
-        collection.update_one(
-            {"whatsapp_message_id": msg_id},
-            {"$set": update_data}
-        )
+        if record:
+            collection.update_one(
+                {"whatsapp_message_id": msg_id},
+                {"$set": update_data}
+            )
         
     return {"status": "received"}
