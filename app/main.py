@@ -96,20 +96,22 @@ async def ringg_webhook(request: Request):
         should_trigger_whatsapp = False
         trigger_reason = ""
 
+        # Priority 1: AI explicitly flagged the request
         if asked is True or str(asked).lower() == "true":
             should_trigger_whatsapp = True
             trigger_reason = "AI Flag (True)"
+        
+        # Priority 2: Call duration > 40 seconds (Highly engaged customer)
+        elif call_duration >= 40:
+            should_trigger_whatsapp = True
+            trigger_reason = f"High Engagement Fallback ({call_duration}s)"
+            
+        # Priority 3: Keywords in transcript (High intent for shorter calls)
         else:
-            # Keyword fallback
-            keywords = ["whatsapp", "link", "message", "send", "details", "price", "cost"]
+            keywords = ["whatsapp", "link", "message", "send", "details", "price", "cost", "whatsapp number", "wa", "msg"]
             if any(kw in transcript.lower() for kw in keywords):
                 should_trigger_whatsapp = True
                 trigger_reason = f"Keyword Fallback (found in transcript)"
-            
-            # Duration fallback (if call > 30 seconds, assume engagement)
-            elif call_duration > 30:
-                should_trigger_whatsapp = True
-                trigger_reason = f"Duration Fallback ({call_duration}s)"
 
         if should_trigger_whatsapp:
             custom_args = data.get("custom_args_values", {})
