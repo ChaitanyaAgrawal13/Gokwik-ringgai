@@ -26,8 +26,17 @@ def send_whatsapp_recovery(phone, name, product_name, recovery_url, image_url):
     else:
         tracked_url = f"{recovery_url}?utm_source=ringg_ai&utm_medium=whatsapp&utm_campaign=recovery"
 
-    # Clean the image URL
-    clean_image_url = image_url.split("?")[0] if image_url else "https://cdn.shopify.com/s/files/1/0778/6158/5140/files/Oxfordgrey.png"
+    # Clean and encode the image URL
+    from urllib.parse import quote, urlparse, urlunparse
+    if image_url:
+        # Remove query params
+        base_url = image_url.split("?")[0]
+        # Encode spaces and special chars in path
+        parsed = urlparse(base_url)
+        encoded_path = quote(parsed.path)
+        clean_image_url = urlunparse(parsed._replace(path=encoded_path))
+    else:
+        clean_image_url = "https://cdn.shopify.com/s/files/1/0778/6158/5140/files/Oxfordgrey.png"
 
     # Normalize phone number (handle +91, 91, or just 10 digits)
     clean_phone = phone.replace("+", "").replace(" ", "").replace("-", "")

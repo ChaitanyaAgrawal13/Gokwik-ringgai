@@ -139,6 +139,7 @@ async def ringg_webhook(request: Request):
                     sort=[("created_at", -1)]
                 )
             else:
+                print(f"⚠️ WhatsApp API failed for {phone}. Triggering SMS fallback.")
                 collection.find_one_and_update(
                     {"phone": phone[-10:]},
                     {"$set": {
@@ -178,6 +179,11 @@ async def kwikengage_webhook(request: Request):
             
             update_data["status"] = "whatsapp_failed"
             update_data["last_error"] = error_reason
+
+            # Meta's Marketing Limit or Restricted Fallback
+            critical_errors = ["whatsapp::error::131049", "whatsapp::error::131026"]
+            if error_code in critical_errors or any(phrase in error_reason for phrase in ["Marketing Message Limit", "restricted by Meta", "Media upload error"]):
+                print(f"❌ Critical WhatsApp failure ({error_code or error_reason}) for {phone}. (SMS fallback disabled)")
 
         elif status in ["delivered", "read", "seen"]:
             update_data["whatsapp_delivered"] = True
