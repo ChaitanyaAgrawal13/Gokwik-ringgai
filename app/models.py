@@ -4,6 +4,8 @@ def create_checkout(data):
     customer = data.get("customer", {})
     address = data.get("address", {})
     phone = customer.get("phone") or address.get("phone")
+    if phone:
+        phone = "".join(filter(str.isdigit, str(phone))) # Keep only digits
     name = f"{customer.get('firstname', '')} {customer.get('lastname', '')}".strip()
     
     # Extract items/products 

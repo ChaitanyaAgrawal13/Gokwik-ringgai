@@ -128,7 +128,7 @@ async def ringg_webhook(request: Request):
             
             if success:
                 collection.find_one_and_update(
-                    {"phone": phone[-10:]},
+                    {"phone": {"$regex": f"{phone[-10:]}$"}},
                     {"$set": {
                         "status": "whatsapp_sent",
                         "whatsapp_sent": True,
@@ -139,9 +139,9 @@ async def ringg_webhook(request: Request):
                     sort=[("created_at", -1)]
                 )
             else:
-                print(f"⚠️ WhatsApp API failed for {phone}. Triggering SMS fallback.")
+                print(f"⚠️ WhatsApp API failed for {phone}. (SMS fallback disabled)")
                 collection.find_one_and_update(
-                    {"phone": phone[-10:]},
+                    {"phone": {"$regex": f"{phone[-10:]}$"}},
                     {"$set": {
                         "status": "whatsapp_failed",
                         "last_error": "Kwikengage API failure",
@@ -168,7 +168,7 @@ async def kwikengage_webhook(request: Request):
     if msg_id:
         # Look up the customer record by message ID to get phone
         record = collection.find_one({"whatsapp_message_id": msg_id})
-        phone = record.get("phone") if record else "unknown"
+        phone = record.get("phone") if record else f"untracked_msg_{msg_id}"
         
         update_data = {"whatsapp_delivery_status": status}
         
