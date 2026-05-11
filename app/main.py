@@ -154,8 +154,19 @@ async def ringg_webhook(request: Request):
             
         # Priority 3: Keywords in transcript (High intent for shorter calls)
         else:
+            # Flatten transcript if it's a list (Ringg returns list of message objects)
+            transcript_text = transcript
+            if isinstance(transcript, list):
+                transcript_text = " ".join([
+                    (m.get("user") or m.get("bot") or "") 
+                    for m in transcript 
+                    if isinstance(m, dict)
+                ])
+            
+            transcript_text = (transcript_text or "").lower()
             keywords = ["whatsapp", "link", "message", "send", "details", "price", "cost", "whatsapp number", "wa", "msg"]
-            if any(kw in transcript.lower() for kw in keywords):
+            
+            if any(kw in transcript_text for kw in keywords):
                 should_trigger_whatsapp = True
                 trigger_reason = f"Keyword Fallback (found in transcript)"
 
