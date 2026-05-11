@@ -48,12 +48,22 @@ async def process_delayed_call(checkout):
         # 3. Wait the required duration
         await asyncio.sleep(wait_seconds)
         
-        # 4. Check if order already placed during the wait
-        order_id = has_completed_order(email, phone, abandoned_at)
-        if order_id:
-            print(f"✅ Order {order_id} found for {phone} after wait! Skipping Ringg AI call.")
+        # Check if order already completed in Shopify
+        order_info = has_completed_order(email, phone, abandoned_at)
+        if order_info:
+            order_id = order_info["name"]
+            order_date = order_info["created_at"]
+            print(f"✅ Conversion detected! Order {order_id} found. Updating DB.")
+            collection.update_one(
+                {"_id": checkout["_id"]},
+                {"$set": {
+                    "status": "converted",
+                    "order_id": order_id,
+                    "order_created_at": order_date
+                }}
+            )
             return
-            
+
         print(f"📞 No order found for {phone} since {abandoned_at}. Triggering Ringg AI call now.")
         success, res = call_ringg_ai(checkout)
         
@@ -68,6 +78,13 @@ async def process_delayed_call(checkout):
             )
         else:
             print(f"❌ Failed to trigger Ringg call for {phone}: {res}")
+            collection.update_one(
+                {"_id": checkout["_id"]},
+                {"$set": {
+                    "status": "call_failed",
+                    "last_error": str(res)
+                }}
+            )
 
     except Exception as e:
         print(f"💥 Error in delayed call process for {checkout.get('phone')}: {e}")

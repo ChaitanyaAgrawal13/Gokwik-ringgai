@@ -44,7 +44,7 @@ def has_completed_order(email, phone, since_time):
             order_name = order.get("name", "Unknown ID")
             # Check email match
             if email and order.get("email") == email:
-                return order_name
+                return {"name": order_name, "created_at": order.get("created_at")}
             
             # Check phone match (normalizing to last 10 digits)
             order_phones = [
@@ -58,7 +58,7 @@ def has_completed_order(email, phone, since_time):
             order_phones = [str(p)[-10:] for p in order_phones if p]
             
             if phone and phone[-10:] in order_phones:
-                return order_name
+                return {"name": order_name, "created_at": order.get("created_at")}
                     
         return None
     except Exception as e:
