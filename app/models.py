@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 
 def create_checkout(data):
     customer = data.get("customer", {})
@@ -30,7 +30,7 @@ def create_checkout(data):
         "recovery_url": data.get("abc_url"),
         "city": address.get("city"),
         "state": address.get("state"),
-        "created_at": datetime.utcnow(),
+        "created_at": datetime.now(timezone.utc),
         "status": "abandoned",  # abandoned, called, whatsapp_sent, converted
         "call_analysis": None,
         "call_duration": 0,

@@ -62,7 +62,7 @@ async def process_delayed_call(checkout):
                 {"_id": checkout["_id"]},
                 {"$set": {
                     "called": True,
-                    "last_called_at": datetime.utcnow(),
+                    "last_called_at": datetime.now(timezone.utc),
                     "call_attempts": checkout.get("call_attempts", 0) + 1
                 }}
             )
@@ -88,7 +88,7 @@ async def gokwik_webhook(request: Request, background_tasks: BackgroundTasks):
     existing = collection.find_one({
         "phone": phone,
         "created_at": {
-            "$gte": datetime.utcnow().replace(hour=0, minute=0, second=0)
+            "$gte": datetime.now(timezone.utc).replace(hour=0, minute=0, second=0)
         }
     })
 
@@ -114,7 +114,7 @@ async def ringg_webhook(request: Request):
 
     if event_type == "all_processing_completed":
         analysis = data.get("client_analysis") or {}
-        call_duration = data.get("call_duration", 0)
+        call_duration = data.get("call_duration") or 0
         phone = data.get("to_number")
         transcript = data.get("transcript") or analysis.get("transcript", "")
         
@@ -129,7 +129,7 @@ async def ringg_webhook(request: Request):
                 "transcript": transcript,
                 "call_duration": call_duration,
                 "status": "called",
-                "last_called_at": datetime.utcnow()
+                "last_called_at": datetime.now(timezone.utc)
             }},
             sort=[("created_at", -1)] # Get most recent
         )
@@ -148,7 +148,7 @@ async def ringg_webhook(request: Request):
             trigger_reason = "AI Flag (True)"
         
         # Priority 2: Call duration > 40 seconds (Highly engaged customer)
-        elif call_duration >= 40:
+        elif call_duration and call_duration >= 40:
             should_trigger_whatsapp = True
             trigger_reason = f"High Engagement Fallback ({call_duration}s)"
             
@@ -190,7 +190,7 @@ async def ringg_webhook(request: Request):
                         "status": "whatsapp_sent",
                         "whatsapp_sent": True,
                         "whatsapp_message_id": msg_id,
-                        "whatsapp_sent_at": datetime.utcnow(),
+                        "whatsapp_sent_at": datetime.now(timezone.utc),
                         "trigger_reason": trigger_reason
                     }},
                     sort=[("created_at", -1)]
@@ -202,7 +202,7 @@ async def ringg_webhook(request: Request):
                     {"$set": {
                         "status": "whatsapp_failed",
                         "last_error": "Kwikengage API failure",
-                        "whatsapp_failed_at": datetime.utcnow(),
+                        "whatsapp_failed_at": datetime.now(timezone.utc),
                         "trigger_reason": trigger_reason
                     }},
                     sort=[("created_at", -1)]

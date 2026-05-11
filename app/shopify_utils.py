@@ -2,7 +2,10 @@ import requests
 import os
 from datetime import datetime, timedelta
 
-SHOPIFY_TOKEN = os.getenv("SHOPIFY_API_TOKEN")
+from dotenv import load_dotenv
+
+load_dotenv()
+
 # We extract the domain dynamically or use a default
 STORE_DOMAIN = "kyyhe6-ry.myshopify.com" 
 
@@ -11,13 +14,14 @@ def has_completed_order(email, phone, since_time):
     Checks if there's a completed order for this email or phone 
     created since the abandonment time.
     """
-    if not SHOPIFY_TOKEN:
+    shopify_token = os.getenv("SHOPIFY_API_TOKEN")
+    if not shopify_token:
         print("⚠️ Shopify token missing, skipping check (defaulting to No Order)")
         return None
 
-    url = f"https://{STORE_DOMAIN}/admin/api/2023-10/orders.json"
+    url = f"https://{STORE_DOMAIN}/admin/api/2024-01/orders.json"
     headers = {
-        "X-Shopify-Access-Token": SHOPIFY_TOKEN,
+        "X-Shopify-Access-Token": shopify_token,
         "Content-Type": "application/json"
     }
     
