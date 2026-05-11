@@ -10,6 +10,35 @@ IST_OFFSET = timezone(timedelta(hours=5, minutes=30))
 
 app = FastAPI()
 
+async def auto_sync_worker():
+    """
+    Background task that pings the f3dashboard sync API every 30 minutes
+    to catch any late conversions automatically.
+    """
+    import httpx
+    # Using the local or production URL
+    dashboard_url = "https://f3dashboard.vercel.app/api/recovery-stats/sync"
+    
+    print("🔄 Auto-Sync Worker started.")
+    while True:
+        try:
+            # Wait 30 minutes
+            await asyncio.sleep(30 * 60) 
+            print("🕒 Auto-Sync Worker: Triggering scheduled conversion scan...")
+            async with httpx.AsyncClient() as client:
+                response = await client.post(dashboard_url, timeout=30.0)
+                if response.status_code == 200:
+                    print(f"✅ Auto-Sync Successful: {response.json().get('syncedCount', 0)} new conversions found.")
+                else:
+                    print(f"⚠️ Auto-Sync Warning: Dashboard returned {response.status_code}")
+        except Exception as e:
+            print(f"💥 Auto-Sync Worker Error: {e}")
+
+@app.on_event("startup")
+async def startup_event():
+    # Start the auto-sync worker in the background
+    asyncio.create_task(auto_sync_worker())
+
 async def process_delayed_call(checkout):
     """
     Handles the 40-minute delay and night-time scheduling.
