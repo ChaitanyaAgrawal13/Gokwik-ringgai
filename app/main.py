@@ -16,8 +16,8 @@ async def auto_sync_worker():
     to catch any late conversions automatically.
     """
     import httpx
-    # Added trailing slash to avoid 307 redirects from Next.js
-    dashboard_url = "https://f3dashboard.vercel.app/api/recovery-stats/sync/"
+    # Reverted to standard URL (no trailing slash)
+    dashboard_url = "https://f3dashboard.vercel.app/api/recovery-stats/sync"
     
     print("🔄 Auto-Sync Worker started.")
     while True:
@@ -25,13 +25,13 @@ async def auto_sync_worker():
             # Wait 30 minutes
             await asyncio.sleep(30 * 60) 
             print("🕒 Auto-Sync Worker: Triggering scheduled conversion scan...")
-            # Added follow_redirects=True to handle Vercel routing
+            # follow_redirects=True ensures we handle any Vercel/Next.js routing
             async with httpx.AsyncClient(follow_redirects=True) as client:
-                response = await client.post(dashboard_url, timeout=30.0)
+                response = await client.post(dashboard_url, timeout=60.0)
                 if response.status_code == 200:
-                    print(f"✅ Auto-Sync Successful: {response.json().get('syncedCount', 0)} new conversions found.")
+                    print(f"✅ Auto-Sync Successful: {response.json().get('syncedCount', 0)} new conversions found. (Reached: {response.url})")
                 else:
-                    print(f"⚠️ Auto-Sync Warning: Dashboard returned {response.status_code}")
+                    print(f"⚠️ Auto-Sync Warning: Dashboard returned {response.status_code} at {response.url}")
         except Exception as e:
             print(f"💥 Auto-Sync Worker Error: {e}")
 
