@@ -55,8 +55,12 @@ async def process_delayed_call(checkout):
         
         phone = checkout.get("phone")
         email = checkout.get("email")
-        # Convert datetime object to ISO string for Shopify
-        abandoned_at = checkout.get("created_at").isoformat()
+        # Subtract 2h buffer so orders placed before GoKwik's delayed webhook are caught.
+        # GoKwik can send the abandon webhook minutes after the customer already placed the order,
+        # making created_at newer than the actual order timestamp.
+        raw_created = checkout.get("created_at")
+        search_from = (raw_created - timedelta(hours=2)).isoformat()
+        abandoned_at = search_from
         
         # 1. Calculate intended call time (Now + 40 mins) in IST
         now_ist = datetime.now(IST_OFFSET)
@@ -204,23 +208,26 @@ async def ringg_webhook(request: Request):
             should_trigger_whatsapp = True
             trigger_reason = f"High Engagement Fallback ({call_duration}s)"
             
-        # Priority 3: Keywords in transcript (High intent for shorter calls)
+        # Priority 3: Keywords in customer's own words only (not the bot's script)
         else:
-            # Flatten transcript if it's a list (Ringg returns list of message objects)
-            transcript_text = transcript
+            customer_text = ""
             if isinstance(transcript, list):
-                transcript_text = " ".join([
-                    (m.get("user") or m.get("bot") or "") 
-                    for m in transcript 
-                    if isinstance(m, dict)
+                # Only join "user" turns — bot turns contain scripted words like
+                # "send", "details", "price" that would cause false positives.
+                customer_text = " ".join([
+                    m.get("user", "")
+                    for m in transcript
+                    if isinstance(m, dict) and m.get("user")
                 ])
-            
-            transcript_text = (transcript_text or "").lower()
+            elif isinstance(transcript, str):
+                customer_text = transcript
+
+            customer_text = customer_text.lower()
             keywords = ["whatsapp", "link", "message", "send", "details", "price", "cost", "whatsapp number", "wa", "msg"]
-            
-            if any(kw in transcript_text for kw in keywords):
+
+            if customer_text and any(kw in customer_text for kw in keywords):
                 should_trigger_whatsapp = True
-                trigger_reason = f"Keyword Fallback (found in transcript)"
+                trigger_reason = f"Keyword Fallback (found in customer transcript)"
 
         if should_trigger_whatsapp:
             custom_args = data.get("custom_args_values", {})
