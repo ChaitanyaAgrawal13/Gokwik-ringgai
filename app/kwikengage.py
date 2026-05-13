@@ -47,6 +47,10 @@ def send_whatsapp_recovery(phone, name, product_name, recovery_url, image_url):
     else:
         to_phone = f"+{clean_phone}" if not phone.startswith("+") else phone
 
+    print(f"🔗 WhatsApp recovery URL (full): {tracked_url}")
+    button_suffix = tracked_url.split("/")[-1] if "/" in tracked_url else tracked_url
+    print(f"🔗 WhatsApp button suffix (sent to template): {button_suffix}")
+
     # Prepare the payload according to Kwikengage v2 structure
     payload = {
         "to": to_phone,
@@ -83,7 +87,7 @@ def send_whatsapp_recovery(phone, name, product_name, recovery_url, image_url):
                         "parameters": [
                             {
                                 "type": "text",
-                                "text": tracked_url.split("/")[-1] if "/" in tracked_url else tracked_url
+                                "text": button_suffix
                             }
                         ]
                     }
