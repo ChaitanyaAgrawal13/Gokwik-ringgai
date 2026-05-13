@@ -10,6 +10,14 @@ IST_OFFSET = timezone(timedelta(hours=5, minutes=30))
 
 app = FastAPI()
 
+# Internal office/test numbers — never call these
+BLOCKED_NUMBERS = {
+    "9669032443", "9844845351", "9900594205", "9880394082", "7829022900",
+    "9327587547", "9539249246", "8105243770", "9629606804", "7253834473",
+    "7044344737", "9953053851", "9871661153", "9916584720", "8971226990",
+    "8921265731", "8309390913"
+}
+
 async def auto_sync_worker():
     """
     Background task that pings the f3dashboard sync API every 30 minutes
@@ -139,6 +147,12 @@ async def gokwik_webhook(request: Request, background_tasks: BackgroundTasks):
 
     if not phone:
         return {"status": "ignored"}
+
+    # Block internal office/test numbers
+    normalized = "".join(filter(str.isdigit, str(phone)))[-10:]
+    if normalized in BLOCKED_NUMBERS:
+        print(f"🚫 Blocked office number: {phone}. Ignoring checkout.")
+        return {"status": "blocked"}
 
     # Dedup: same day
     existing = collection.find_one({
