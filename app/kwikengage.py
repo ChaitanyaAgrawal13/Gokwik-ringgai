@@ -1,6 +1,6 @@
 import requests
 import os
-import json
+from urllib.parse import urlparse, parse_qs, quote, urlunparse
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -20,25 +20,28 @@ def send_whatsapp_recovery(phone, name, product_name, recovery_url, image_url):
         "Content-Type": "application/json"
     }
 
-    # Add UTM parameters to the recovery URL
+    # Full destination URL with UTM tracking (passed in meta_data.destination_urls)
     if "?" in recovery_url:
-        tracked_url = f"{recovery_url}&utm_source=ringg_ai&utm_medium=whatsapp&utm_campaign=recovery"
+        destination_url = f"{recovery_url}&utm_source=ringg_ai&utm_medium=whatsapp&utm_campaign=recovery"
     else:
-        tracked_url = f"{recovery_url}?utm_source=ringg_ai&utm_medium=whatsapp&utm_campaign=recovery"
+        destination_url = f"{recovery_url}?utm_source=ringg_ai&utm_medium=whatsapp&utm_campaign=recovery"
+
+    # Extract mrid UUID as the button tracking slug (used for {{1}} in template https://tlpn.io/{{1}})
+    # Kwikengage maps this slug to destination_url via link_tracking
+    qs = parse_qs(urlparse(recovery_url).query)
+    button_slug = qs.get("mrid", [""])[0] or recovery_url
+    print(f"🔗 destination_url: {destination_url}")
+    print(f"🔗 button_slug ({{1}}): {button_slug}")
 
     # Clean and encode the image URL
-    from urllib.parse import quote, urlparse, urlunparse
     if image_url:
-        # Remove query params
-        base_url = image_url.split("?")[0]
-        # Encode spaces and special chars in path
-        parsed = urlparse(base_url)
-        encoded_path = quote(parsed.path)
-        clean_image_url = urlunparse(parsed._replace(path=encoded_path))
+        base_img = image_url.split("?")[0]
+        parsed_img = urlparse(base_img)
+        clean_image_url = urlunparse(parsed_img._replace(path=quote(parsed_img.path)))
     else:
         clean_image_url = "https://cdn.shopify.com/s/files/1/0778/6158/5140/files/Oxfordgrey.png"
 
-    # Normalize phone number (handle +91, 91, or just 10 digits)
+    # Normalize phone to E.164
     clean_phone = phone.replace("+", "").replace(" ", "").replace("-", "")
     if len(clean_phone) == 10:
         to_phone = f"+91{clean_phone}"
@@ -47,11 +50,6 @@ def send_whatsapp_recovery(phone, name, product_name, recovery_url, image_url):
     else:
         to_phone = f"+{clean_phone}" if not phone.startswith("+") else phone
 
-    print(f"🔗 WhatsApp recovery URL (full): {tracked_url}")
-    button_suffix = tracked_url.split("/")[-1] if "/" in tracked_url else tracked_url
-    print(f"🔗 WhatsApp button suffix (sent to template): {button_suffix}")
-
-    # Prepare the payload according to Kwikengage v2 structure
     payload = {
         "to": to_phone,
         "channel": "whatsapp",
@@ -77,22 +75,23 @@ def send_whatsapp_recovery(phone, name, product_name, recovery_url, image_url):
                         "type": "body",
                         "parameters": [
                             {"type": "text", "text": name},          # {{1}}
-                            {"type": "text", "text": product_name}    # {{2}}
+                            {"type": "text", "text": product_name}   # {{2}}
                         ]
                     },
                     {
                         "type": "button",
                         "sub_type": "url",
+                        "link_tracking": True,
                         "index": 0,
                         "parameters": [
-                            {
-                                "type": "text",
-                                "text": button_suffix
-                            }
+                            {"type": "text", "text": button_slug}
                         ]
                     }
                 ]
             }
+        },
+        "meta_data": {
+            "destination_urls": [destination_url]
         }
     }
 
@@ -102,7 +101,6 @@ def send_whatsapp_recovery(phone, name, product_name, recovery_url, image_url):
             try:
                 res_data = response.json()
                 print(f"✅ KWIKENGAGE API RESPONSE: {res_data}")
-                # Extract message ID (tried multiple common fields)
                 msg_id = res_data.get('message_id_attr') or res_data.get('messageId') or res_data.get('id')
                 if not msg_id and res_data.get('data'):
                     data = res_data.get('data')
