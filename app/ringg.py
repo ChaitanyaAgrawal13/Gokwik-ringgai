@@ -151,6 +151,74 @@ def expand_size_in_title(title: str) -> str:
         expanded = expand_size(size_part)
         return f"{parts[0]} - {expanded}"
 
+# --- Customer name handling -------------------------------------------------
+
+# Hand-verified Devanagari for common first names where automatic
+# transliteration is unreliable (keys are lowercase).
+NAME_OVERRIDES = {
+    "priya": "प्रिया", "kavya": "काव्या", "ananya": "अनन्या",
+    "bhavya": "भव्या", "ramya": "रम्या", "soumya": "सौम्या",
+    "saumya": "सौम्या", "karan": "करण", "krishna": "कृष्ण",
+    "preeti": "प्रीति",
+}
+
+# Honorifics that should never be mistaken for the customer's name.
+_NAME_HONORIFICS = {"mr", "mrs", "ms", "miss", "mx", "dr", "shri", "smt", "sri"}
+
+# In-memory cache so repeated names don't re-hit the transliteration API.
+_translit_cache = {}
+
+
+def extract_first_name(full_name):
+    """Returns a clean first name from a possibly messy full-name field."""
+    if not full_name:
+        return ""
+    for token in str(full_name).split():
+        # Keep only Latin/Devanagari letters — drops emojis, digits, punctuation.
+        cleaned = re.sub(r"[^A-Za-zऀ-ॿ]", "", token)
+        if cleaned and cleaned.lower() not in _NAME_HONORIFICS:
+            return cleaned
+    return ""
+
+
+def _has_devanagari(text):
+    return any("ऀ" <= ch <= "ॿ" for ch in text)
+
+
+def transliterate_to_devanagari(name):
+    """Transliterates a romanized first name to Devanagari for Hindi calls.
+
+    Checks a hand-verified override list first, then Google Input Tools.
+    Always falls back to the original name on failure so a call is never blocked.
+    """
+    if not name or _has_devanagari(name):
+        return name
+
+    key = name.lower()
+    if key in NAME_OVERRIDES:
+        return NAME_OVERRIDES[key]
+    if key in _translit_cache:
+        return _translit_cache[key]
+
+    result = name  # safe fallback if the API is unavailable
+    try:
+        res = requests.get(
+            "https://inputtools.google.com/request",
+            params={"text": name, "itc": "hi-t-i0-und", "num": 1,
+                    "cp": 0, "cs": 1, "ie": "utf-8", "oe": "utf-8"},
+            timeout=5,
+        )
+        if res.status_code == 200:
+            data = res.json()
+            if data and data[0] == "SUCCESS" and data[1][0][1]:
+                result = data[1][0][1][0]
+    except Exception as e:
+        print(f"⚠️ Name transliteration failed for '{name}': {e}")
+
+    _translit_cache[key] = result
+    return result
+
+
 def call_ringg_ai(user, agent_id="3f3a9cc0-2362-440e-a6c4-8de4a8d99979", from_number_id="3a75bd88-4872-4845-a580-2e9bec58961e", scheduled_at=None):
     url = f"{BASE_URL}/ca/api/v0/calling/outbound/individual" 
 
@@ -180,18 +248,29 @@ def call_ringg_ai(user, agent_id="3f3a9cc0-2362-440e-a6c4-8de4a8d99979", from_nu
 
     spoken_language = get_preferred_language(user.get("state", ""))
 
+    # Speak only the first name, and transliterate it to Devanagari for Hindi
+    # calls so the voice pronounces it naturally instead of reading English
+    # letters with an English accent.
+    raw_name = user.get("name") or "Customer"
+    first_name = extract_first_name(raw_name) or "Customer"
+    spoken_name = (
+        transliterate_to_devanagari(first_name)
+        if spoken_language == "hindi"
+        else first_name
+    )
+
     phone = str(user["phone"])
     if not phone.startswith("+"):
         phone = f"+91{phone[-10:]}"
 
     payload = {
-        "name": user.get("name", "Customer"),
+        "name": raw_name,
         "mobile_number": phone,
-        "agent_id": agent_id,              
-        "from_number_id": from_number_id,  
-        "custom_args_values": {            
-            "callee_name": user.get("name", "Customer"),
-            "original_callee_name": user.get("name", "Customer"),
+        "agent_id": agent_id,
+        "from_number_id": from_number_id,
+        "custom_args_values": {
+            "callee_name": spoken_name,
+            "original_callee_name": raw_name,
             "shirt_name": spoken_title,
             "shirt_price": item_price,
             "language": spoken_language,
