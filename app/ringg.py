@@ -139,6 +139,47 @@ def strip_size_from_title(title: str) -> str:
         return base.strip()
     return title.strip()
 
+
+def _variant_available(variant: dict) -> bool:
+    """Whether a single Shopify variant can currently be ordered."""
+    if not variant.get("inventory_management"):
+        return True  # Shopify is not tracking stock for this variant
+    if variant.get("inventory_policy") == "continue":
+        return True  # overselling is allowed
+    return (variant.get("inventory_quantity") or 0) > 0
+
+
+def get_stock_status(product_data: dict, raw_title: str) -> str:
+    """Returns 'yes' or 'no' for whether the customer's size is in stock.
+
+    The Shopify variant id (option1 / title) matches the size suffix of the
+    cart title, e.g. 'M-40'. Defaults to 'yes' whenever stock cannot be
+    determined, so a data gap never blocks a sale.
+    """
+    if not product_data:
+        return "yes"
+    variants = product_data.get("variants") or []
+    if not variants:
+        return "yes"
+
+    size = ""
+    if raw_title and " - " in raw_title:
+        last = raw_title.rsplit(" - ", 1)[1].strip()
+        if _SIZE_SUFFIX.match(last):
+            size = last
+
+    def norm(value):
+        return re.sub(r"[^a-z0-9]", "", str(value or "").lower())
+
+    nsize = norm(size)
+    if nsize:
+        for v in variants:
+            if nsize in (norm(v.get("option1")), norm(v.get("title"))):
+                return "yes" if _variant_available(v) else "no"
+
+    # Size not matched (or not present) — in stock if any variant is available.
+    return "yes" if any(_variant_available(v) for v in variants) else "no"
+
 # --- Customer name handling -------------------------------------------------
 
 # Hand-verified Devanagari for common first names where automatic
@@ -221,6 +262,9 @@ def call_ringg_ai(user, agent_id="3f3a9cc0-2362-440e-a6c4-8de4a8d99979", from_nu
     # Fetch real-time data from Shopify
     product_data, metafields = fetch_shopify_product_data(product_id)
     body_html = product_data.get("body_html", "") if product_data else ""
+
+    # Check whether the customer's size is in stock (passed to the agent)
+    in_stock = get_stock_status(product_data, raw_title)
     
     # Extract Product Image URL
     product_image_url = ""
@@ -267,7 +311,8 @@ def call_ringg_ai(user, agent_id="3f3a9cc0-2362-440e-a6c4-8de4a8d99979", from_nu
             "shirt_fabric": shirt_fabric,  
             "fit": shirt_fit,                  
             "recovery_url": user.get("recovery_url", ""),
-            "product_image_url": product_image_url
+            "product_image_url": product_image_url,
+            "in_stock": in_stock
         },
         "call_config": {
             "call_retry_config": {
