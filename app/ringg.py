@@ -115,41 +115,29 @@ def get_preferred_language(state: str) -> str:
         return "english"
     return "hindi"
 
-def expand_size(size_abbr: str) -> str:
-    """Expands size abbreviations to spoken-friendly names."""
-    size_map = {
-        "xs": "Extra Small",
-        "s": "Small",
-        "m": "Medium",
-        "l": "Large",
-        "xl": "XL",
-        "xxl": "Double XL",
-        "xxxl": "Triple XL",
-        "2xl": "Double XL",
-        "3xl": "Triple XL",
-    }
-    return size_map.get(size_abbr.lower().strip(), size_abbr)
+# Trailing size suffix on product titles, e.g. "M-40", "XXL-46", "L", "Medium-40".
+_SIZE_SUFFIX = re.compile(
+    r"^(?:XS|XXXL|XXL|XL|3XL|2XL|S|M|L|SMALL|MEDIUM|LARGE|\d{2})"
+    r"(?:[-/ ]?\d{1,3})?$",
+    re.IGNORECASE,
+)
 
-def expand_size_in_title(title: str) -> str:
-    """Expands the size abbreviation directly inside the title.
-    e.g. 'Slim Fit Sand Beige Knit Shirt - M-40' -> 'Slim Fit Sand Beige Knit Shirt - Medium-40'
+
+def strip_size_from_title(title: str) -> str:
+    """Removes a trailing size suffix from a product title so the voice agent
+    says just the shirt name, not the size.
+
+    e.g. 'Slim Fit Sand Beige Knit Shirt - M-40' -> 'Slim Fit Sand Beige Knit Shirt'
+
+    A trailing segment is dropped only when it actually looks like a size, so a
+    real product name that happens to contain ' - ' is left untouched.
     """
-    if " - " not in title:
+    if not title or " - " not in title:
         return title
-    parts = title.rsplit(" - ", 1)
-    if len(parts) < 2:
-        return title
-    size_part = parts[1].strip()  # e.g. "M-40" or "XXL-46"
-    size_pieces = size_part.split("-", 1)
-    if len(size_pieces) >= 2:
-        size_abbr = size_pieces[0].strip()
-        numeric = size_pieces[1].strip()
-        expanded = expand_size(size_abbr)
-        return f"{parts[0]} - {expanded}-{numeric}"
-    else:
-        # No numeric part, just expand the abbreviation
-        expanded = expand_size(size_part)
-        return f"{parts[0]} - {expanded}"
+    base, last = title.rsplit(" - ", 1)
+    if _SIZE_SUFFIX.match(last.strip()):
+        return base.strip()
+    return title.strip()
 
 # --- Customer name handling -------------------------------------------------
 
@@ -227,8 +215,8 @@ def call_ringg_ai(user, agent_id="3f3a9cc0-2362-440e-a6c4-8de4a8d99979", from_nu
     product_id = items[0].get("product_id") if items else None
     item_price = str(items[0].get("price", "")) if items else ""
     
-    # Expand size abbreviation directly in the title (e.g. "M-40" -> "Medium-40")
-    spoken_title = expand_size_in_title(raw_title) if raw_title else ""
+    # Drop the trailing size suffix so the agent says just the shirt name
+    spoken_title = strip_size_from_title(raw_title) if raw_title else ""
     
     # Fetch real-time data from Shopify
     product_data, metafields = fetch_shopify_product_data(product_id)
