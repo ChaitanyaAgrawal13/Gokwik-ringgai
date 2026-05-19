@@ -4,9 +4,14 @@ import asyncio
 from app.db import collection
 from app.models import create_checkout
 from app.ringg import call_ringg_ai
+from bson import ObjectId
 
 # Define IST timezone (UTC+5:30)
 IST_OFFSET = timezone(timedelta(hours=5, minutes=30))
+
+# Fix 3 — we own call retries (the Ringg payload now has retry_count: 0).
+MAX_CALL_ATTEMPTS = 3      # 1 initial call + up to 2 retries
+RETRY_WAIT_MINUTES = 30    # gap between an unanswered call and the next redial
 
 app = FastAPI()
 
@@ -52,6 +57,20 @@ async def auto_sync_worker():
 async def startup_event():
     # Start the auto-sync worker in the background
     asyncio.create_task(auto_sync_worker())
+
+async def wait_until_calling_hours():
+    """Sleep until 09:15 IST if we're currently outside the 09:00-22:00 IST
+    calling window, so a retry redial never fires at night."""
+    now_ist = datetime.now(IST_OFFSET)
+    if 9 <= now_ist.hour < 22:
+        return
+    target = now_ist + timedelta(days=1) if now_ist.hour >= 22 else now_ist
+    target = target.replace(hour=9, minute=15, second=0, microsecond=0)
+    wait_seconds = (target - now_ist).total_seconds()
+    if wait_seconds > 0:
+        print(f"🌙 Retry would land at night — sleeping {wait_seconds/3600:.1f}h until 09:15 IST.")
+        await asyncio.sleep(wait_seconds)
+
 
 async def process_delayed_call(checkout):
     """
@@ -114,24 +133,80 @@ async def process_delayed_call(checkout):
         print(f"📞 No order found for {phone} since {abandoned_at}. Triggering Ringg AI call now.")
         success, res = call_ringg_ai(checkout)
         
-        if success:
-            collection.update_one(
-                {"_id": checkout["_id"]},
-                {"$set": {
-                    "called": True,
-                    "last_called_at": datetime.now(timezone.utc),
-                    "call_attempts": checkout.get("call_attempts", 0) + 1
-                }}
-            )
-        else:
+        if not success:
             print(f"❌ Failed to trigger Ringg call for {phone}: {res}")
             collection.update_one(
                 {"_id": checkout["_id"]},
-                {"$set": {
-                    "status": "call_failed",
-                    "last_error": str(res)
-                }}
+                {"$set": {"status": "call_failed", "last_error": str(res)}}
             )
+            return
+
+        collection.update_one(
+            {"_id": checkout["_id"]},
+            {"$set": {
+                "called": True,
+                "status": "called",
+                "last_called_at": datetime.now(timezone.utc),
+                "call_attempts": 1
+            }}
+        )
+        print(f"✅ Call attempt 1/{MAX_CALL_ATTEMPTS} placed for {phone}.")
+
+        # Fix 3 — owned retries. After an unanswered call, wait, re-check
+        # Shopify for an order, and redial only if the customer still hasn't
+        # ordered AND still hasn't picked up. Answered calls are never retried.
+        attempt = 1
+        while attempt < MAX_CALL_ATTEMPTS:
+            await asyncio.sleep(RETRY_WAIT_MINUTES * 60)
+            await wait_until_calling_hours()
+
+            doc = collection.find_one({"_id": checkout["_id"]})
+            if not doc:
+                return  # doc removed — nothing to retry
+
+            if doc.get("status") == "converted":
+                print(f"✅ {phone} already converted — stopping retries.")
+                return
+
+            order_info = has_completed_order(email, phone, abandoned_at)
+            if order_info:
+                print(f"✅ Order {order_info['name']} found for {phone} — stopping retries.")
+                collection.update_one(
+                    {"_id": checkout["_id"]},
+                    {"$set": {
+                        "status": "converted",
+                        "converted": True,
+                        "order_id": order_info["name"],
+                        "order_created_at": order_info["created_at"]
+                    }}
+                )
+                return
+
+            # The Ringg webhook records call_duration on this exact doc (Fix 1).
+            # A connected call means the customer heard the pitch — no redial.
+            if (doc.get("call_duration") or 0) > 0:
+                print(f"☎️ {phone} answered a previous call — no retry.")
+                return
+
+            attempt += 1
+            print(f"🔁 Retry {attempt}/{MAX_CALL_ATTEMPTS} for {phone} — previous call unanswered.")
+            success, res = call_ringg_ai(doc)
+            if success:
+                collection.update_one(
+                    {"_id": checkout["_id"]},
+                    {"$set": {
+                        "called": True,
+                        "status": "called",
+                        "last_called_at": datetime.now(timezone.utc),
+                        "call_attempts": attempt
+                    }}
+                )
+            else:
+                print(f"❌ Retry {attempt} failed for {phone}: {res}")
+                collection.update_one(
+                    {"_id": checkout["_id"]},
+                    {"$set": {"last_error": str(res)}}
+                )
 
     except Exception as e:
         print(f"💥 Error in delayed call process for {checkout.get('phone')}: {e}")
@@ -154,15 +229,20 @@ async def gokwik_webhook(request: Request, background_tasks: BackgroundTasks):
         print(f"🚫 Blocked office number: {phone}. Ignoring checkout.")
         return {"status": "blocked"}
 
-    # Dedup: same day
+    # Dedup: any still-active checkout for this phone in the last 24h.
+    # Rolling window, not the UTC calendar day — the old check split an evening
+    # abandonment from a next-morning re-abandonment into two docs / two calls.
+    # Match on the last 10 digits since stored numbers vary ("+91…", "91…", …).
+    # Converted docs are ignored: a fresh abandonment after a completed order
+    # is a genuine new lead.
     existing = collection.find_one({
-        "phone": phone,
-        "created_at": {
-            "$gte": datetime.now(timezone.utc).replace(hour=0, minute=0, second=0)
-        }
+        "phone": {"$regex": f"{normalized}$"},
+        "created_at": {"$gte": datetime.now(timezone.utc) - timedelta(hours=24)},
+        "status": {"$ne": "converted"}
     })
 
     if existing:
+        print(f"🔁 Duplicate checkout for {normalized} within 24h — ignoring.")
         return {"status": "duplicate"}
 
     checkout = create_checkout(data)
@@ -191,9 +271,28 @@ async def ringg_webhook(request: Request):
         print(f"📊 Client Analysis Received: {analysis}")
         print(f"📝 Transcript: {transcript}")
         
+        # Fix 1 — resolve the exact checkout this call belongs to. checkout_id
+        # is the Mongo _id we round-trip through Ringg's custom_args_values.
+        # Falls back to "latest doc by phone" only for calls placed before
+        # checkout_id existed (e.g. in-flight during the deploy).
+        custom_args = data.get("custom_args_values") or {}
+        checkout_id = custom_args.get("checkout_id")
+        target = None
+        if checkout_id:
+            try:
+                target = {"_id": ObjectId(checkout_id)}
+            except Exception:
+                print(f"⚠️ Invalid checkout_id '{checkout_id}' — falling back to phone match.")
+        if target is None:
+            if not phone:
+                print("⚠️ Ringg webhook has neither checkout_id nor to_number — ignoring.")
+                return {"status": "ignored"}
+            print(f"⚠️ No checkout_id on Ringg webhook — falling back to latest doc for {phone}.")
+            target = {"phone": {"$regex": f"{phone[-10:]}$"}}
+
         # Store analysis and transcript in DB
         collection.find_one_and_update(
-            {"phone": phone[-10:]}, # Matching last 10 digits
+            target,
             {"$set": {
                 "call_analysis": analysis,
                 "transcript": transcript,
@@ -246,7 +345,13 @@ async def ringg_webhook(request: Request):
         if should_trigger_whatsapp:
             custom_args = data.get("custom_args_values", {})
             
-            name = custom_args.get("callee_name", "Customer")
+            # Use the English name for WhatsApp — callee_name is Devanagari on
+            # Hindi calls. Fall back to the raw name for pre-deploy calls.
+            name = (
+                custom_args.get("callee_name_en")
+                or custom_args.get("original_callee_name")
+                or "Customer"
+            )
             product = custom_args.get("shirt_name", "your item")
             link = custom_args.get("recovery_url")
             image = custom_args.get("product_image_url")
@@ -258,7 +363,7 @@ async def ringg_webhook(request: Request):
             
             if success:
                 collection.find_one_and_update(
-                    {"phone": {"$regex": f"{phone[-10:]}$"}},
+                    target,
                     {"$set": {
                         "status": "whatsapp_sent",
                         "whatsapp_sent": True,
@@ -271,7 +376,7 @@ async def ringg_webhook(request: Request):
             else:
                 print(f"⚠️ WhatsApp API failed for {phone}. (SMS fallback disabled)")
                 collection.find_one_and_update(
-                    {"phone": {"$regex": f"{phone[-10:]}$"}},
+                    target,
                     {"$set": {
                         "status": "whatsapp_failed",
                         "last_error": "Kwikengage API failure",

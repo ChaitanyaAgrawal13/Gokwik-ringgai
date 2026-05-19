@@ -301,7 +301,13 @@ def call_ringg_ai(user, agent_id="3f3a9cc0-2362-440e-a6c4-8de4a8d99979", from_nu
         "agent_id": agent_id,
         "from_number_id": from_number_id,
         "custom_args_values": {
+            # Round-trips back in the Ringg webhook so call results land on
+            # this exact checkout doc, not "the latest doc for this phone".
+            "checkout_id": str(user.get("_id", "")),
             "callee_name": spoken_name,
+            # English first name — the WhatsApp message uses this, not the
+            # Devanagari callee_name the voice agent uses for Hindi calls.
+            "callee_name_en": first_name,
             "original_callee_name": raw_name,
             "shirt_name": spoken_title,
             "shirt_price": item_price,
@@ -315,8 +321,11 @@ def call_ringg_ai(user, agent_id="3f3a9cc0-2362-440e-a6c4-8de4a8d99979", from_nu
             "in_stock": in_stock
         },
         "call_config": {
+            # retry_count: 0 — Ringg makes exactly one attempt. We own retries
+            # in process_delayed_call so we can re-check Shopify for an order
+            # before every redial and never call a customer who already ordered.
             "call_retry_config": {
-                "retry_count": 3,
+                "retry_count": 0,
                 "retry_busy": 30,
                 "retry_not_picked": 30,
                 "retry_failed": 30
