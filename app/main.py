@@ -1,6 +1,7 @@
 from fastapi import FastAPI, Request, BackgroundTasks
 from datetime import datetime, timedelta, timezone
 import asyncio
+import random
 from app.db import collection
 from app.models import create_checkout
 from app.ringg import call_ringg_ai
@@ -10,8 +11,15 @@ from bson import ObjectId
 IST_OFFSET = timezone(timedelta(hours=5, minutes=30))
 
 # Fix 3 — we own call retries (the Ringg payload now has retry_count: 0).
-MAX_CALL_ATTEMPTS = 3      # 1 initial call + up to 2 retries
-RETRY_WAIT_MINUTES = 30    # gap between an unanswered call and the next redial
+# Pacing: attempt 2 fires 30 min after attempt 1 to catch the briefly-busy
+# customer (the highest-conversion window). Attempt 3 is targeted for 24h
+# after the cart was abandoned — i.e. roughly the same time of day the
+# customer was last near their phone — and the 23h gap before the third
+# dial keeps us out of carrier spam-clustering algorithms.
+MAX_CALL_ATTEMPTS     = 3
+RETRY_2_GAP_MINUTES   = 30   # attempt 2: 30 min after attempt 1
+RETRY_3_TARGET_HOURS  = 24   # attempt 3: at abandonment_time + 24h
+RETRY_JITTER_MINUTES  = 10   # ± random jitter so the timing isn't robotic
 
 app = FastAPI()
 
@@ -157,7 +165,18 @@ async def process_delayed_call(checkout):
         # ordered AND still hasn't picked up. Answered calls are never retried.
         attempt = 1
         while attempt < MAX_CALL_ATTEMPTS:
-            await asyncio.sleep(RETRY_WAIT_MINUTES * 60)
+            jitter_min = random.uniform(-RETRY_JITTER_MINUTES, RETRY_JITTER_MINUTES)
+            if attempt == 1:
+                # Before attempt 2 — short same-day retry, relative gap.
+                wait_min = RETRY_2_GAP_MINUTES + jitter_min
+            else:
+                # Before attempt 3 — absolute target = abandonment + 24h.
+                # raw_created is set to checkout.get("created_at") above and is
+                # already a tz-aware UTC datetime from create_checkout().
+                created_tz = raw_created if raw_created.tzinfo else raw_created.replace(tzinfo=timezone.utc)
+                target = created_tz + timedelta(hours=RETRY_3_TARGET_HOURS)
+                wait_min = (target - datetime.now(timezone.utc)).total_seconds() / 60 + jitter_min
+            await asyncio.sleep(max(60, wait_min * 60))
             await wait_until_calling_hours()
 
             doc = collection.find_one({"_id": checkout["_id"]})
