@@ -248,7 +248,7 @@ def transliterate_to_devanagari(name):
     return result
 
 
-def call_ringg_ai(user, agent_id="770157d6-4f72-4da3-898e-4e5c786f5bfd", from_number_id="f77346c7-ba44-4470-a697-b90c72f5878f", scheduled_at=None):
+def call_ringg_ai(user, agent_id="3f3a9cc0-2362-440e-a6c4-8de4a8d99979", from_number_id="f77346c7-ba44-4470-a697-b90c72f5878f", scheduled_at=None):
     url = f"{BASE_URL}/ca/api/v0/calling/outbound/individual" 
 
     items = user.get("items", [])
